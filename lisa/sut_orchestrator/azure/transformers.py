@@ -284,8 +284,10 @@ class DeployTransformer(Transformer):
 
         envs = Environments()
         environment_requirement = EnvironmentSpace()
+        self._log.debug(f"==>runbook.requirement: {runbook.requirement}")
         environment_requirement.nodes.append(runbook.requirement)
         environment = envs.from_requirement(environment_requirement)
+        self._log.debug(f"==>environment.capability: {environment.capability}")
         assert environment
 
         platform.prepare_environment(environment=environment)

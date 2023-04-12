@@ -420,6 +420,8 @@ class AzurePlatform(Platform):
             caps, error = self._get_matched_capabilities(
                 location=location, nodes_requirement=nodes_requirement, log=log
             )
+            log.debug(f"==>caps: {caps}")
+            log.debug(f"==>error: {error}")
 
             if error:
                 errors.append(error)
@@ -1363,9 +1365,11 @@ class AzurePlatform(Platform):
         deployment_operation: Any = None
         deployments = self._rm_client.deployments
         try:
+            self._log.debug(f"==>deployments: {deployments}")
             deployment_operation = deployments.begin_create_or_update(
                 **deployment_parameters
             )
+            self._log.debug(f"==>deployment_parameters: {deployment_parameters['parameters'].__dict__}")
             while True:
                 try:
                     wait_operation(
@@ -1381,6 +1385,7 @@ class AzurePlatform(Platform):
             # azure.core.exceptions.HttpResponseError:
             #    Operation returned an invalid status 'OK'
             assert identifier.error, f"HttpResponseError: {identifier}"
+            self._log.debug(f"==>Error: {identifier.error}")
 
             error_message = "\n".join(self._parse_detail_errors(identifier.error))
             if (
@@ -2299,7 +2304,10 @@ class AzurePlatform(Platform):
 
         # filter allowed vm sizes
         for azure_cap in candidate_capabilities:
+            self._log.debug(f"==>azure_cap: {azure_cap}")
+            self._log.debug(f"==>azure_cap.capability: {azure_cap.capability}")
             check_result = requirement.check(azure_cap.capability)
+            self._log.debug(f"==>check_result: {check_result}")
             if check_result.result:
                 min_cap = self._generate_min_capability(
                     requirement, azure_cap, azure_cap.location
@@ -2321,9 +2329,13 @@ class AzurePlatform(Platform):
         # get allowed vm sizes. Either it's from the runbook defined, or
         # from subscription supported .
         for req_index, req in enumerate(nodes_requirement):
+            self._log.debug(f"==>req_index: {req_index}")
+            self._log.debug(f"==>req: {req}")
             candidate_caps, sub_error = self._get_allowed_capabilities(
                 req, location, log
             )
+            self._log.debug(f"==>candidate_caps: {candidate_caps}")
+            self._log.debug(f"==>sub_error: {sub_error}")
             if sub_error:
                 # no candidate found, so try next one.
                 error = sub_error
@@ -2336,13 +2348,18 @@ class AzurePlatform(Platform):
                 awaitable_capabilities,
             ) = self._parse_cap_availabilities(candidate_caps)
 
+            self._log.debug(f"==>available_capabilities: {available_capabilities}")
+            self._log.debug(f"==>awaitable_capabilities: {awaitable_capabilities}")
+
             # sort vm sizes to match
             available_capabilities = self.get_sorted_vm_sizes(
                 available_capabilities, log
             )
+            self._log.debug(f"==>available_capabilities: {available_capabilities}")
 
             # match vm sizes by capability or use the predefined vm sizes.
             candidate_cap = self._get_matched_capability(req, available_capabilities)
+            self._log.debug(f"==>candidate_cap_1: {candidate_cap}")
             if candidate_cap:
                 caps[req_index] = candidate_cap
             else:
@@ -2355,6 +2372,7 @@ class AzurePlatform(Platform):
                 candidate_cap = self._get_matched_capability(
                     req, awaitable_capabilities
                 )
+                self._log.debug(f"==>candidate_cap_2: {candidate_cap}")
                 if candidate_cap:
                     # True means awaitable.
                     caps[req_index] = True
@@ -2444,7 +2462,9 @@ class AzurePlatform(Platform):
                 azure_runbook = cap.get_extended_runbook(AzureNodeSchema, AZURE)
                 vm_size = azure_runbook.vm_size
                 if vm_size not in cap_calculator:
+                    self._log.debug("==>Adding in cap_calculator")
                     cap_calculator[vm_size] = self._get_usage(location, vm_size)
+                    self._log.debug(f"==>cap_calculator: {cap_calculator}")
                 remaining, limit = cap_calculator[vm_size]
                 remaining -= 1
                 cap_calculator[vm_size] = (remaining, limit)
@@ -2494,6 +2514,7 @@ class AzurePlatform(Platform):
             return (sys.maxsize, sys.maxsize)
 
         usages = self._get_quotas(location)
+        self._log.debug(f"==>usages: {usages}")
         # The default value is to support force run for non-exists vm size.
         return usages.get(vm_size, (sys.maxsize, sys.maxsize))
 
