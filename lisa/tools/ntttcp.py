@@ -12,7 +12,7 @@ from lisa.messages import (
     TransportProtocol,
     create_perf_message,
 )
-from lisa.operating_system import CBLMariner
+from lisa.operating_system import FreeBSD, CBLMariner
 from lisa.tools import Firewall, Gcc, Git, Make, Sed
 from lisa.util import constants
 from lisa.util.process import ExecutableResult, Process
@@ -119,6 +119,12 @@ class Ntttcp(Tool):
         {"vm.max_map_count": "655300"},
         {"net.ipv4.ip_local_port_range": "1024 65535"},
     ]
+    freebsd_sys_list_tcp = [
+        {"kern.pid_max": "99999"},
+        {"vm.kmem_size_max": "335544320"},
+        {"net.inet.ip.portrange.first": "10000"},
+        {"net.inet.ip.portrange.last": "65535"},
+    ]
     sys_list_udp = [
         {"net.core.rmem_max": "67108864"},
         {"net.core.rmem_default": "67108864"},
@@ -140,7 +146,10 @@ class Ntttcp(Tool):
 
     def setup_system(self, udp_mode: bool = False, set_task_max: bool = True) -> None:
         sysctl = self.node.tools[Sysctl]
-        sys_list = self.sys_list_tcp
+        if isinstance(self.node.os, FreeBSD):
+            sys_list = self.freebsd_sys_list_tcp
+        else:
+            sys_list = self.sys_list_tcp
         if udp_mode:
             sys_list = self.sys_list_udp
         for sys in sys_list:
