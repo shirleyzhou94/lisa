@@ -776,17 +776,21 @@ class LisaRunner(BaseRunner):
                             and hasattr(self, "platform")
                             and self.platform.runbook.ignored_capability
                         ):
-                            node_requirement.features.items = [
-                                x
-                                for x in node_requirement.features
-                                if str(x).lower()
-                                not in list(
+                            ignored_features = []
+                            for feature in node_requirement.features:
+                                if str(feature).lower() in list(
                                     map(
                                         str.lower,
                                         self.platform.runbook.ignored_capability,
                                     )
+                                ):
+                                    node_requirement.features.items.remove(feature)
+                                    ignored_features.append(feature)
+                            if ignored_features:
+                                self._log.debug(
+                                    f"the feature(s) {ignored_features} have "
+                                    "been ignored from node requirement features."
                                 )
-                            ]
 
                         assert isinstance(platform_requirement.extended_schemas, dict)
                         assert isinstance(node_requirement.extended_schemas, dict)
