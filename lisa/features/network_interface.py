@@ -46,6 +46,7 @@ class NetworkInterface(Feature):
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self.origin_extra_synthetic_nics_count: int = 0
         self.origin_extra_sriov_nics_count: int = 0
+        self.nics: Any = None
 
 
 Sriov = partial(NetworkInterfaceOptionSettings, data_path=schema.NetworkDataPath.Sriov)

@@ -20,8 +20,8 @@ class Ip(Tool):
     )
     __ip_addr_show_regex = re.compile(
         (
-            r"\d+: (?P<name>\w+): \<.+\> .+\n\s+"
-            r"link\/(?:ether|infiniband) (?P<mac>[0-9a-z:]+) .+\n?"
+            r"\d+: (?P<name>\w+): \<.+\> .+\n\s+link\/(?:ether|infiniband) "
+            r"(?P<mac>[0-9a-z:]+) .+\n(?:(?:.+\n\s+|.*)altname \w+)?"
             r"(?:\s+inet (?P<ip_addr>[\d.]+)\/.*\n)?"
         )
     )
@@ -230,3 +230,9 @@ class Ip(Tool):
 
         # start interface
         self.up(name)
+
+    def get_ip_address(self, nic_name: str) -> str:
+        result = self.run(f"addr show {nic_name}", force_run=True, sudo=True)
+        matched = self.__ip_addr_show_regex.match(result.stdout)
+        assert matched
+        return matched.group("ip_addr")

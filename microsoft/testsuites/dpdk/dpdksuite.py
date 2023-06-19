@@ -616,7 +616,7 @@ class Dpdk(TestSuite):
         lsmod = node.tools[Lsmod]
         modprobe = node.tools[Modprobe]
         nic = node.nics.get_secondary_nic()
-        node.nics.get_nic_driver(nic.upper)
+        node.nics.get_nic_driver(nic.name)
         if nic.bound_driver == "hv_netvsc":
             enable_uio_hv_generic_for_nic(node, nic)
 
@@ -638,7 +638,7 @@ class Dpdk(TestSuite):
 
         node.nics.unbind(nic)
         node.nics.bind(nic, str(original_driver))
-        nic.bound_driver = node.nics.get_nic_driver(nic.upper)
+        nic.bound_driver = node.nics.get_nic_driver(nic.name)
 
         assert_that(nic.bound_driver).described_as(
             (

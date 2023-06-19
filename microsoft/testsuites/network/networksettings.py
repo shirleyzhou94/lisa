@@ -593,10 +593,10 @@ class NetworkSettings(TestSuite):
 
         device = client_node.nics.default_nic
         nic = client_node.nics.get_nic(device)
-        if nic.lower:
+        if nic.pci_device_name:
             # If AN is enabled on this interface then use VF nic stats.
             an_enabled = True
-            device = nic.lower
+            device = nic.pci_device_name
 
         timeout = 300
         timer = create_timer()
@@ -752,9 +752,11 @@ class NetworkSettings(TestSuite):
         per_vf_queue_stats = 0
         for device_stats in devices_statistics:
             nic = client_node.nics.get_nic(device_stats.interface)
-            if nic.lower:
+            if nic.pci_device_name:
                 try:
-                    device_stats = ethtool.get_device_statistics(nic.lower, True)
+                    device_stats = ethtool.get_device_statistics(
+                        nic.pci_device_name, True
+                    )
                 except UnsupportedOperationException as identifier:
                     raise SkippedException(identifier)
 

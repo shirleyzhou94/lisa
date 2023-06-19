@@ -188,7 +188,7 @@ class NetInterface(TestSuite):
         current_nic_count = len(node_nic_info)
         for index in range(0, current_nic_count):
             test_nic = node_nic_info.get_nic_by_index(index)
-            test_nic_name = test_nic.upper
+            test_nic_name = test_nic.name
             if "eth0" == test_nic_name:
                 continue
         assert_that(test_nic).is_not_none()

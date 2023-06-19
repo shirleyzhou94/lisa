@@ -191,8 +191,8 @@ class DpdkTestpmd(Tool):
         include_nics = [node_nic]
         exclude_nics = [
             self.node.nics.get_nic(nic)
-            for nic in self.node.nics.get_upper_nics()
-            if nic != node_nic.upper
+            for nic in self.node.nics.get_nics()
+            if nic != node_nic.name
         ]
 
         # build list of vdev info flags for each nic
@@ -201,11 +201,11 @@ class DpdkTestpmd(Tool):
         for nic in include_nics:
             if self._dpdk_version_info and self._dpdk_version_info >= "18.11.0":
                 vdev_name = "net_vdev_netvsc"
-                vdev_flags = f"iface={nic.upper},force=1"
+                vdev_flags = f"iface={nic.name},force=1"
             else:
                 vdev_name = "net_failsafe"
                 vdev_flags = (
-                    f"dev({nic.pci_slot}),dev(net_tap0,iface={nic.upper},force=1)"
+                    f"dev({nic.pci_slot}),dev(net_tap0,iface={nic.name},force=1)"
                 )
             if nic.bound_driver == "hv_netvsc":
                 vdev_info += f'--vdev="{vdev_name}{vdev_id},{vdev_flags}" '
@@ -215,7 +215,7 @@ class DpdkTestpmd(Tool):
                 fail(
                     (
                         f"Unknown driver({nic.bound_driver}) bound to "
-                        f"{nic.upper}/{nic.lower}."
+                        f"{nic.name}/{nic.pci_device_name}."
                         "Cannot generate testpmd include arguments."
                     )
                 )

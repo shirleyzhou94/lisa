@@ -151,7 +151,7 @@ def _aggregate_count(
     patterns: List[Pattern[str]],
 ) -> int:
     ethtool = node.tools[Ethtool]
-    nic_names = [nic.upper, nic.lower]
+    nic_names = [nic.name, nic.pci_device_name]
 
     # aggregate xdp drop count by different nic type
     new_count = -previous_count
