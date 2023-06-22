@@ -46,6 +46,7 @@ from .hibernation_setup import HibernationSetup
 from .hostname import Hostname
 from .hwclock import Hwclock
 from .hyperv import HyperV
+from .ifconfig import Ifconfig
 from .interrupt_inspector import InterruptInspector
 from .ip import Ip
 from .iperf3 import Iperf3
@@ -155,6 +156,7 @@ __all__ = [
     "Hostname",
     "Hwclock",
     "HyperV",
+    "Ifconfig",
     "InterruptInspector",
     "Ip",
     "Iperf3",
