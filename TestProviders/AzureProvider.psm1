@@ -121,6 +121,7 @@ Class AzureProvider : TestProvider {
 	}
 
 	[void] DeleteVMs($allVMData, $SetupTypeData, $UseExistingRG) {
+		Write-Loginfo "DeleteVMs from AzureProvider.psm1."
 		if ($this.RunWithTiP) {
 			$UseExistingRG = $true
 		}
@@ -156,8 +157,18 @@ Class AzureProvider : TestProvider {
 		$Timeout = New-Timespan -Minutes ([int]($MaximumCores / 10) + 10)
 		$sw = [diagnostics.stopwatch]::StartNew()
 		$vmStatus = $null
+		$maxAttempt = 5
+		$attempt = 0
 		foreach ($vmData in $AllVMData) {
 			$vmStatus = Get-AzVM -ResourceGroupName $vmData.ResourceGroupName -Name $vmData.RoleName -Status
+			# Test aborted if $vmStatus.Statuses[-1] returns nothing, this could be due to Connect-AzAccount expires or something else
+			while($null -eq $vmStatus -and ($sw.elapsed -lt $Timeout) -and ($attempt -lt $maxAttempt)){
+				Write-LogInfo "Unable to get VM $($vmData.RoleName) state, vmstatus = $vmStatus. Retrying.. [$attempt/$maxAttempt]"
+				Start-Sleep -Seconds 10
+				# When Linux script run too long, Azure Account credential may timeout and we need to rerun Connect-AzAccount
+				ReConnectAzureAccount
+				$vmStatus = Get-AzVM -ResourceGroupName $vmData.ResourceGroupName -Name $vmData.RoleName -Status
+			}
 			while (($vmStatus.Statuses[-1].Code -ne "PowerState/running") -and ($sw.elapsed -lt $Timeout)) {
 				Write-LogInfo "VM $($vmData.RoleName) is in $($vmStatus.Statuses[-1].Code) state, still not in running state"
 				Start-Sleep -Seconds 10
@@ -208,12 +219,13 @@ Class AzureProvider : TestProvider {
 			$DeleteResourceGroupJobs | Remove-Job -Force
 		}
 		# Clean up AzContext only when using service principal or using AzureContextFile
-		$spClientID = $global:XmlSecrets.secrets.SubscriptionServicePrincipalClientID
-		$spKey = $global:XmlSecrets.secrets.SubscriptionServicePrincipalKey
-		$contextFilePath = $global:XmlSecrets.secrets.AzureContextFilePath
-		if (($spClientID -and $spKey) -or $contextFilePath) {
-			Clear-AzContext -Force -ErrorAction SilentlyContinue | Out-NULL
-		}
+		# remove this
+		# $spClientID = $global:XmlSecrets.secrets.SubscriptionServicePrincipalClientID
+		# $spKey = $global:XmlSecrets.secrets.SubscriptionServicePrincipalKey
+		# $contextFilePath = $global:XmlSecrets.secrets.AzureContextFilePath
+		# if (($spClientID -and $spKey) -or $contextFilePath) {
+		# 	Clear-AzContext -Force -ErrorAction SilentlyContinue | Out-NULL
+		# }
 		# Remove ppk file if exist
 		Remove-Item "$env:TEMP\*.ppk" -Force -ErrorAction SilentlyContinue
 	}

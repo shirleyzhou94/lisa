@@ -28,8 +28,16 @@ grid_driver="https://go.microsoft.com/fwlink/?linkid=874272"
 
 #######################################################################
 function skip_test() {
+	GetOSVersion
+	LogMsg "Checking Distro version... DISTRO: $DISTRO VERSION_ID:$VERSION_ID os_RELEASE:$os_RELEASE"
 	if [[ $driver == "CUDA" ]] && ([[ $DISTRO == *"suse"* ]] || [[ $DISTRO == "redhat_8" ]] || [[ $DISTRO == *"debian"* ]] || [[ $DISTRO == "almalinux_8" ]] || [[ $DISTRO == "rockylinux_8" ]]); then
 		LogMsg "$DISTRO not supported. Skip the test."
+		SetTestStateSkipped
+		exit 0
+	fi
+
+	if [[ $driver == "AMD" ]]; then
+		LogMsg "AMD GPU test not supported. Skip the test."
 		SetTestStateSkipped
 		exit 0
 	fi
@@ -38,7 +46,7 @@ function skip_test() {
 	# Only support Ubuntu 16.04 LTS, 18.04 LTS, RHEL/CentOS 7.0 ~ 7.9, SLES 12 SP2
 	# Azure HPC team defines GRID driver support scope.
 	if [[ $driver == "GRID" ]]; then
-		support_distro="redhat_7 centos_7 ubuntu_x suse_12"
+		support_distro="redhat_7 centos_7 ubuntu_16.04 ubuntu_18.04 ubuntu_20.04 ubuntu_x suse_12"
 		unsupport_flag=0
 		GetDistro
 		source /etc/os-release
@@ -50,6 +58,7 @@ function skip_test() {
 					unsupport_flag=1
 				fi
 			fi
+			# TODO: centos_8?
 			if [[ $DISTRO == "centos_7" ]]; then
 				# 7.x > 7.9 should be skipped
 				_minor_ver=$(cat /etc/centos-release | cut -d ' ' -f 4 | cut -d '.' -f 2)
@@ -57,9 +66,9 @@ function skip_test() {
 					unsupport_flag=1
 				fi
 			fi
-			if [[ $DISTRO == "ubuntu_x" ]]; then
+			if [[ $DISTRO == "ubuntu"* ]]; then
 				# skip other ubuntu version than 16.04, 18.04, 20.04, 21.04
-				if [[ $VERSION_ID != "16.04" && $VERSION_ID != "18.04" && $VERSION_ID != "20.04" && $VERSION_ID != "21.04" && $VERSION_ID != "21.10" && $VERSION_ID != "22.04" ]]; then
+				if [[ $os_RELEASE != "16.04" && $os_RELEASE != "18.04" && $os_RELEASE != "20.04" && $os_RELEASE != "21.04" ]]; then
 					unsupport_flag=1
 				fi
 			fi
@@ -125,23 +134,51 @@ function InstallCUDADrivers() {
 
 	ubuntu*)
 		GetOSVersion
-		if [[ $os_RELEASE == 16.04 ]] || [[ $os_RELEASE == 18.04 ]] || [[ $os_RELEASE == 20.04 ]] || [[ $os_RELEASE == 22.04 ]]; then
-			LogMsg "Proceeding with installation for $os_RELEASE"
-			release="${os_RELEASE//./}"
+		# 20.04 version install differs from older versions. Special case the new version. Abort if version doesn't exist yet.
+		if [[ $os_RELEASE =~ 21.* ]] || [[ $os_RELEASE =~ 22.* ]]; then
+			LogErr "CUDA Driver may not exist for Ubuntu > 21.XX , check https://developer.download.nvidia.com/compute/cuda/repos/ for new versions."
+			SetTestStateAborted;
+		fi
+		if [ $os_RELEASE = 20.04 ]; then
+			LogMsg "Proceeding with installation for 20.04"
+			wget -O /etc/apt/preferences.d/cuda-repository-pin-600 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin
+			apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
+			add-apt-repository "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
 		else
-			# for versions which not in below list will try to use 1804
-			release="1804"
-		fi
-		if [[ $os_RELEASE == 16.04 ]]; then
-			apt install -y gnupg-curl
-		fi
-		wget -O "/etc/apt/preferences.d/cuda-repository-pin-600" "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$release/x86_64/cuda-ubuntu$release.pin"
-		apt-key adv --fetch-keys "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$release/x86_64/3bf863cc.pub"
-		add-apt-repository -y "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu$release/x86_64/ /"
-		dpkg_configure
-		apt update
+			if [[ $os_RELEASE =~ 19.* ]]; then
+				LogMsg "There is no cuda driver for $os_RELEASE, used the one for 18.10"
+				os_RELEASE="18.10"
+			fi
+			CUDA_REPO_PKG="cuda-repo-ubuntu${os_RELEASE//./}_${CUDADriverVersion}_amd64.deb"
+			LogMsg "Using ${CUDA_REPO_PKG}"
 
-		apt -y --allow-unauthenticated install cuda-drivers > $HOME/install_drivers.log 2>&1
+			wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu"${os_RELEASE//./}"/x86_64/"${CUDA_REPO_PKG}" -O /tmp/"${CUDA_REPO_PKG}"
+			if [ $? -ne 0 ]; then
+				LogErr "Failed to download ${CUDA_REPO_PKG}"
+				SetTestStateAborted
+				return 1
+			else
+				LogMsg "Successfully downloaded ${CUDA_REPO_PKG}"
+			fi
+		fi
+
+		apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu"${os_RELEASE//./}"/x86_64/3bf863cc.pub
+		if [ $os_RELEASE != 20.04 ]; then
+			dpkg -i /tmp/"${CUDA_REPO_PKG}"
+			LogMsg "Installed ${CUDA_REPO_PKG}"
+			dpkg_configure
+		fi
+		apt-get update
+
+		# Issue: latest Nvidia Driver version 510 is broken on T4 VM, roll back to older version if needed
+		if [ -z ${NVIDIAVersion+x} ]; then
+			LogMsg "Using latest cuda-drivers"
+			apt -y --allow-unauthenticated install cuda-drivers > $HOME/install_drivers.log 2>&1
+		else
+			LogMsg "Using cuda-drivers-$NVIDIAVersion"
+			apt -y --allow-unauthenticated install cuda-drivers-$NVIDIAVersion  > $HOME/install_drivers.log 2>&1
+		fi
+
 		if [ $? -ne 0 ]; then
 			LogErr "Failed to install cuda-drivers package!"
 			SetTestStateAborted
@@ -179,6 +216,7 @@ EOF
 	chmod +x NVIDIA-Linux-x86_64-grid.run
 	./NVIDIA-Linux-x86_64-grid.run --no-nouveau-check --silent --no-cc-version-check
 	if [ $? -ne 0 ]; then
+		LogMsg "Failed to install the GRID driver: $?"
 		LogErr "Failed to install the GRID driver!"
 		SetTestStateAborted
 		return 1
@@ -197,6 +235,7 @@ EOF
 }
 
 function install_gpu_requirements() {
+	apt-get update --fix-missing -y
 	install_package "wget lshw gcc make"
 	LogMsg "installed wget lshw gcc make"
 
@@ -267,11 +306,21 @@ function install_gpu_requirements() {
 		;;
 
 		ubuntu*)
-			apt -y install build-essential libelf-dev linux-tools-"$(uname -r)" linux-cloud-tools-"$(uname -r)" python libglvnd-dev ubuntu-desktop
+			# apt -y install build-essential libelf-dev linux-tools-"$(uname -r)" linux-cloud-tools-"$(uname -r)" python libglvnd-dev ubuntu-desktop
+			# E: Unable to locate package libglvnd-dev
+			LogMsg "Installing required packages for nvidia gpu driver..."
+			# libmlx4-1 has no installation candidate ubuntu2004
+			# install_package "libdapl2 libmlx4-1" 
+			# req_pkg="build-essential libelf-dev linux-tools-"$(uname -r)" linux-cloud-tools-"$(uname -r)" python ubuntu-desktop"
+			# ubuntu-desktop seems to cause timeout
+			req_pkg="build-essential libelf-dev linux-tools-"$(uname -r)" linux-cloud-tools-"$(uname -r)" python"
+			install_package $req_pkg
+			# apt --fix-broken install -y
+			# apt-get install -y build-essential libelf-dev linux-tools-"$(uname -r)" linux-cloud-tools-"$(uname -r)" python ubuntu-desktop
 			if [ $? -eq 0 ]; then
-				LogMsg "Successfully installed build-essential libelf-dev linux-tools linux-cloud-tools python libglvnd-dev ubuntu-desktop"
+				LogMsg "Successfully installed $req_pkg"
 			else
-				LogErr "Failed to install build-essential libelf-dev linux-tools linux-cloud-tools python libglvnd-dev ubuntu-desktop"
+				LogErr "Failed to install $req_pkg"
 				SetTestStateAborted
 				return 1
 			fi
@@ -326,16 +375,26 @@ UtilsInit
 GetDistro
 
 # Validate repo availability
-update_repos
-if [ $? != 0 ]; then
-	SetTestStateAborted
-fi
+# GPCv1 uses Ubuntu 16.04 one of the package is not fetchable
+# ubuntu 1804+  The repository 'http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64  InRelease' is not signed.
+# if [[ $DISTRO == "ubuntu_16.04" ]]; then
+# 	LogMsg "Skip updating repos for ubuntu 16.04"
+# else
+# 	LogMsg "Updating repos"
+# 	update_repos
+# 	if [ $? != 0 ]; then
+# 		LogErr "unable to update_repos, abort test."
+# 		SetTestStateAborted
+# 		exit 0
+# 	fi
+# fi
 
 # Validate the distro version eligibility
+LogMsg "Validate the distro version eligibility."
 skip_test
 _state=$(cat state.txt)
 if [ $_state == "TestAborted" ]; then
-	LogErr "Stop test procedure here for state, $_state"
+	LogErr "Stop test procedure due to state $_state"
 	exit 0
 fi
 
@@ -346,6 +405,8 @@ if [ "$driver" == "CUDA" ]; then
 	InstallCUDADrivers
 elif [ "$driver" == "GRID" ]; then
 	InstallGRIDdrivers
+elif [ "$driver" == "AMD" ]; then
+	LogMsg "AMD GPU not supported. Skipping. Test to be added."
 else
 	LogMsg "Driver type not detected, defaulting to CUDA driver."
 	InstallCUDADrivers

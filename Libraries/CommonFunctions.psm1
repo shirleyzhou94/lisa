@@ -109,9 +109,6 @@ Function Select-TestCases($TestXMLs, $TestCategory, $TestArea, $TestNames, $Test
     }
     if ($ExcludeTests) {
         $excludedTestsArray = @($ExcludeTests.Trim(', ').Split(',').Trim())
-        $excludedCaseLog = "ExcludedCases.log"
-        $null = New-Item -Path $LogDir -Name $excludedCaseLog -ItemType "file"
-        $excludedCaseLogPath = Join-Path -Path $LogDir -ChildPath $excludedCaseLog
     }
 
     # Filter test cases based on the criteria
@@ -181,12 +178,10 @@ Function Select-TestCases($TestXMLs, $TestCategory, $TestArea, $TestNames, $Test
                         }
                         if ($test.TestName -imatch $TestString) {
                             Write-LogInfo "Excluded Test  : $($test.TestName) [Wildcards match]"
-                            $null = Add-Content -Path $excludedCaseLogPath -Value "$($test.TestName) [Wildcards match]"
                             $ExcludeTestMatched = $true
                         }
                     } elseif ($TestString -eq $test.TestName) {
                         Write-LogInfo "Excluded Test  : $($test.TestName) [Exact match]"
-                        $null = Add-Content -Path $excludedCaseLogPath -Value "$($test.TestName) [Exact match]"
                         $ExcludeTestMatched = $true
                     }
                 }
@@ -597,7 +592,9 @@ Function Provision-VMsForLisa($allVMData, $installPackagesOnRoleNames)
 		{
 			Throw "Failed to enable root password / starting SSHD service. Please check logs. Aborting test."
 		}
-		$Null = Run-LinuxCmd -ip $vmData.PublicIP -port $vmData.SSHPort -username "root" -password $password -command "cp -ar /home/$user/*.sh ."
+        # Wait 1 minutes to allow ssh connection stable
+        Wait-Time -seconds 60
+		$Null = Run-LinuxCmd -ip $vmData.PublicIP -port $vmData.SSHPort -username "root" -password $password -command "cp -ar /home/$user/*.sh ." -maxRetryCount 5
 		if ( $keysGenerated )
 		{
 			Copy-RemoteFiles -uploadTo $vmData.PublicIP -port $vmData.SSHPort -files "$LogDir\sshFix.tar" -username "root" -password $password -upload
@@ -2623,9 +2620,19 @@ Function Get-ExpectedDevicesCount {
             break
         }
         "GPU" {
-            if ($size -imatch "Standard_ND96asr") {
+            if ($size -imatch "Standard_ND96") {
                 [int]$expectedCount = $($vmCPUCount/12)
-            } elseif ($size -match "Standard_NDv2") {
+            } elseif ($size -imatch "Standard_NC96") {
+                [int]$expectedCount = $($vmCPUCount/24)
+            } elseif (($size -imatch "Standard_NV36" -or $size -imatch "Standard_NV18" -or $size -imatch "Standard_NV12" -or $size -imatch "Standard_NV12") -and $size -imatch "A10_v5") {
+                [int]$expectedCount = 1 # TODO: Update for partial size
+            } elseif ($size -imatch "Standard_NV72ads_A10_v5") {
+                [int]$expectedCount = $($vmCPUCount/36)
+            } elseif (($size -imatch "Standard_NC4as_T4_v3") -or ($size -imatch "Standard_NC8as_T4_v3") -or ($size -imatch "Standard_NC16as_T4_v3")) {
+                [int]$expectedCount = 1
+            } elseif ($size -imatch "Standard_NC64as_T4_v3") {
+                [int]$expectedCount = $($vmCPUCount/16)
+            } elseif ($size -imatch "Standard_ND40") {
                 [int]$expectedCount = $($vmCPUCount/5)
             } elseif (($size -imatch "Standard_ND" -or $size -imatch "Standard_NV") -and $size -imatch "v3") {
                 [int]$expectedCount = $($vmCPUCount/12)
@@ -2669,4 +2676,73 @@ Function ExtractSSHPublicKeyFromPPKFile {
         } else {
             return $null
         }
+}
+
+# Reconnect Azure Account using service principle
+Function ReConnectAzureAccount {
+    param (
+        [String] $CustomSecretsFilePath,
+        [switch] $force=$false
+    )
+
+    # If Azure credential is still valid, skip it
+    try {
+        $Error.Clear()
+        $res = Get-AzSubscription -SubscriptionId $global:XmlSecrets.secrets.SubscriptionID -ErrorAction SilentlyContinue 
+        if($res) {
+            Write-LogInfo "ReConnectAzureAccount skipped: Azure credential is valid"
+            if($false){
+                Write-LogInfo "Force re-authenticate"
+            } else {
+                return
+            }
+        }
+        else {
+            Write-LogInfo $Error
+        }
+    } catch {
+        Write-LogInfo "Azure credential is no longer valid."
+    }
+
+    $secretsFile = ""
+
+    if ($env:Azure_Secrets_File) {
+		$secretsFile = $env:Azure_Secrets_File
+		Write-LogInfo "ReConnectAzureAccount using secrets file: $secretsFile, defined in environments."
+	}
+	elseif ( ![string]::IsNullOrEmpty($CustomSecretsFilePath) ) {
+        $secretsFile = $CustomSecretsFilePath
+		Write-LogInfo "ReConnectAzureAccount using provided secrets file: $secretsFile"
+	}
+    else {
+        Write-LogInfo "ReConnectAzureAccount using global secrets"
+    }
+
+    if (![string]::IsNullOrEmpty($secretsFile)) {
+        .\Utilities\AddAzureRmAccountFromSecretsFile.ps1 -customSecretsFilePath $secretsFile
+    }
+    else{
+        $spClientID = $global:XmlSecrets.secrets.SubscriptionServicePrincipalClientID
+        $spKey = $global:XmlSecrets.secrets.SubscriptionServicePrincipalKey
+        $TenantID = $global:XmlSecrets.secrets.SubscriptionServicePrincipalTenantID
+
+        if (($spClientID -and $spKey)) {
+            # Scenario 1: Service Principal Credentials are avaialble in Secret File
+            Write-LogInfo "Re-Authenticating Azure PS session using Service Principal..."
+            $pass = ConvertTo-SecureString $spKey -AsPlainText -Force
+            $mycred = New-Object System.Management.Automation.PSCredential ($spClientID, $pass)
+            $null = Connect-AzAccount -ServicePrincipal -Tenant $TenantID -Credential $mycred
+        }
+        else {
+            Throw "There was an error when reading global XmlSecrets variable."
+        }
+        #Verify if the user is Authorized to use the subscription.
+        $azContextResult = Set-AzContext -Subscription $global:XmlSecrets.secrets.SubscriptionID -ErrorAction SilentlyContinue
+        if ($azContextResult -and ($azContextResult.Subscription.Id -eq $global:XmlSecrets.secrets.SubscriptionID)) {
+            Write-LogInfo "Current Subscription : $($global:XmlSecrets.secrets.SubscriptionID)."
+        }
+        else {
+            Throw "There was an error when selecting $($global:XmlSecrets.secrets.SubscriptionID)."
+        }
+    }
 }

@@ -65,8 +65,8 @@ Class HyperVController : TestController
 		}
 	}
 
-	[void] PrepareTestEnvironment($XMLSecretFile) {
-		([TestController]$this).PrepareTestEnvironment($XMLSecretFile)
+	[void] PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate) {
+		([TestController]$this).PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate)
 		$hyperVConfig = $this.GlobalConfig.Global.HyperV
 		$secrets = $this.XmlSecrets.secrets
 		if ($this.XMLSecrets) {

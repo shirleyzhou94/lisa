@@ -228,6 +228,15 @@ function GetDistro() {
 		*Ubuntu*14.04*)
 			DISTRO=ubuntu_14.04
 			;;
+		*Ubuntu*16.04*)
+			DISTRO=ubuntu_16.04
+			;;
+		*Ubuntu*18.04*)
+			DISTRO=ubuntu_18.04
+			;;
+		*Ubuntu*20.04*)
+			DISTRO=ubuntu_20.04
+			;;
 		*Ubuntu*)
 			DISTRO=ubuntu_x
 			;;
@@ -1484,7 +1493,6 @@ function CreateIfupConfigFile() {
 				cat <<-EOF >> "$__file_path"
 						[Match]
 						Name=$__interface_name
-
 						[Network]
 						Address=$__ip/24
 					EOF
@@ -2442,7 +2450,7 @@ function install_fio () {
 			yum -y --nogpgcheck install wget sysstat mdadm blktrace libaio fio bc libaio-devel gcc gcc-c++ kernel-devel
 			if ! command -v fio; then
 				LogMsg "fio is not installed\n Build it from source code now..."
-				fio_version="3.30"
+				fio_version="3.13"
 				wget https://github.com/axboe/fio/archive/fio-${fio_version}.tar.gz
 				tar xvf fio-${fio_version}.tar.gz
 				pushd fio-fio-${fio_version} && ./configure && make && make install
@@ -2457,7 +2465,7 @@ function install_fio () {
 			dnf -y --nogpgcheck install wget build-essential sysstat blktrace libaio bc libaio-devel gcc kernel-devel kernel-headers binutils glibc-devel zlib-devel
 			if ! command -v fio; then
 				LogMsg "fio is not installed\n Build it from source code now..."
-				fio_version="3.30"
+				fio_version="3.13"
 				wget https://github.com/axboe/fio/archive/fio-${fio_version}.tar.gz
 				tar xvf fio-${fio_version}.tar.gz
 				pushd fio-fio-${fio_version} && ./configure && make && make install
@@ -2491,7 +2499,7 @@ function install_fio () {
 			which fio
 			if [ $? -ne 0 ]; then
 				LogMsg "fio is not installed\n Build it from source code now..."
-				fio_version="3.30"
+				fio_version="3.13"
 				wget https://github.com/axboe/fio/archive/fio-${fio_version}.tar.gz
 				tar xvf fio-${fio_version}.tar.gz
 				pushd fio-fio-${fio_version} && ./configure && make && make install
@@ -2695,7 +2703,6 @@ function install_lagscope () {
 			install_epel
 			yum -y --nogpgcheck install libaio sysstat git bc make gcc wget cmake libarchive
 			build_lagscope "${1}"
-			export PATH=$PATH:/usr/local/bin
 			iptables -F
 			systemctl stop firewalld.service || service firewalld stop
 			;;
@@ -2776,7 +2783,6 @@ function install_ntttcp () {
 			yum -y --nogpgcheck install wget libaio sysstat git bc make gcc dstat psmisc lshw cmake
 			build_ntttcp "${1}"
 			build_lagscope "${2}"
-			export PATH=$PATH:/usr/local/bin
 			iptables -F
 			;;
 

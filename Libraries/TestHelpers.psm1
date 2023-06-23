@@ -90,7 +90,7 @@ function Create-TestResultObject() {
 function Upload-RemoteFile($uploadTo, $port, $file, $username, $password, $usePrivateKey, $maxRetry) {
 	$retry = 1
 	if (!$maxRetry) {
-		$maxRetry = 10
+		$maxRetry = 20
 	}
 	while ($retry -le $maxRetry) {
 		$pscpStuckTimeoutInSeconds = New-Timespan -Seconds 540
@@ -160,7 +160,7 @@ function Upload-RemoteFile($uploadTo, $port, $file, $username, $password, $usePr
 		}
 		if (($returnCode -ne 0) -and ($retry -ne $maxRetry)) {
 			Write-LogWarn "Error in upload, attempt $retry/$maxRetry, retrying"
-			Wait-Time -seconds 10
+			Wait-Time -seconds 15
 		}
 		elseif (($returnCode -ne 0) -and ($retry -eq $maxRetry)) {
 			Write-Output "Error in upload after $retry attempt, hence giving up"
@@ -392,7 +392,7 @@ Function Get-AvailableExecutionFolder([string] $username, [string] $password, [s
 	}
 }
 
-Function Run-LinuxCmd([string] $username, [string] $password, [string] $ip, [string] $command, [int] $port, [switch]$runAsSudo, [Boolean]$WriteHostOnly, [Boolean]$NoLogsPlease, [switch]$ignoreLinuxExitCode, [int]$runMaxAllowedTime = 300, [switch]$RunInBackGround, [int]$maxRetryCount = 1, [string] $MaskStrings) {
+Function Run-LinuxCmd([string] $username, [string] $password, [string] $ip, [string] $command, [int] $port, [switch]$runAsSudo, [Boolean]$WriteHostOnly, [Boolean]$NoLogsPlease, [switch]$ignoreLinuxExitCode, [int]$runMaxAllowedTime = 300, [switch]$RunInBackGround, [int]$maxRetryCount = 2, [string] $MaskStrings) {
 	if (!$global:AvailableExecutionFolder) {
 		Get-AvailableExecutionFolder $username $password $ip $port
 	}
@@ -446,7 +446,7 @@ Function Run-LinuxCmd([string] $username, [string] $password, [string] $ip, [str
 		}
 	}
 	if ($global:sshPrivateKey) {
-		Write-LogDbg ".\Tools\plink.exe -ssh -t -i ppkfile -P $port $username@$ip $logCommand"
+		Write-LogDbg ".\Tools\plink.exe -ssh -t -i $global:SSHPrivateKey -P $port $username@$ip $logCommand"
 	}
 	else {
 		Write-LogDbg ".\Tools\plink.exe -ssh -t -pw $password -P $port $username@$ip $logCommand"
@@ -545,77 +545,86 @@ Function Run-LinuxCmd([string] $username, [string] $password, [string] $ip, [str
 			}
 		}
 		else {
-			While (!$timeout -and ($runLinuxCmdJob.State -eq "Running")) {
-				Write-Progress -Activity "Attempt : $attemptswot+$attemptswt : Executing $logCommand on $ip : $port" `
-					-Status "Timeout in $($RunMaxAllowedTime - $($sw.elapsed.TotalSeconds)) seconds.." -Id $progressId -PercentComplete -1
-				if ($sw.elapsed.TotalSeconds -lt $RunMaxAllowedTime) {
-					$timeout = $false
-				}
-				else {
-					$timeOut = $true
-					$sw.Stop()
-					Stop-Job $runLinuxCmdJob
-				}
+			if(!$($runLinuxCmdJob.State))
+			{
+				Write-LogWarn "Failed to runLinuxCmdJob. Retrying..."
 			}
-			Write-Progress -Activity "Attempt : $attemptswot+$attemptswt : Executing $logCommand on $ip : $port" `
-				-Status $runLinuxCmdJob.State -Id $progressId -Completed
-			$jobOut = Receive-Job $runLinuxCmdJob 2> $LogDir\$randomFileName
-			if ($jobOut) {
-				$jobOut = $jobOut.Replace("[sudo] password for $username`: ", "").Replace("Password: ", "")
-				$RunLinuxCmdOutput = ($jobOut | Select-Object -SkipLast 1) -Join [Environment]::NewLine
-			}
-			$LinuxExitCode = (Select-String -Pattern "AZURE-LINUX-EXIT-CODE-[0-9]*" -InputObject $jobOut).Matches.Value
-
-			Remove-Job $runLinuxCmdJob -Force -ErrorAction SilentlyContinue
-			if ($LinuxExitCode -imatch "AZURE-LINUX-EXIT-CODE-0") {
-				$shouldBreak = $true
-				$sw.Stop()
-				Write-LogDbg "$MaskedCommand executed successfully in $([math]::Round($($sw.elapsed.TotalSeconds), 2)) seconds."
-				$retValue = $RunLinuxCmdOutput.Trim()
-				Remove-Item $LogDir\$randomFileName -Force | Out-Null
-			}
-			else {
-				Get-Content $LogDir\$randomFileName | Foreach-Object { $debugOutputBuilder.AppendLine($_) | Out-Null }
-				Remove-Item $LogDir\$randomFileName -Force | Out-Null
-				if ($LinuxExitCode) {
-					$returnCode = $LinuxExitCode.Split("-")[4]
-				}
-				$debugOutputString = $debugOutputBuilder.ToString().Trim()
-				$debugOutputString = $debugOutputString -replace "[sudo] password for $username`: ", "" -replace "Password: ", ""
-				if ($debugOutputString -imatch "Unable to authenticate") {
-					Write-LogWarn "Unable to authenticate. Not retrying!"
-					Throw "Calling function - $($MyInvocation.MyCommand). Unable to authenticate"
-				}
-				if (!$ignoreLinuxExitCode) {
-					if ($returnCode) {
-						Write-LogErr "Failed to execute : $MaskedCommand"
-						Write-LogErr "$debugOutputString"
-						Write-LogWarn "Linux machine returned exit code : $returnCode"
-					}
-					if ($timeOut) {
-						$retValue = ""
-						if (-not $returnCode) {
-							Write-LogErr "Timeout while executing command : $MaskedCommand"
-							Write-LogErr "$debugOutputString"
-						}
-						Throw "Calling function - $($MyInvocation.MyCommand). Timeout while executing command : $MaskedCommand"
+			else{
+				# Write-LogDbg "runLinuxCmdJob Status: $($runLinuxCmdJob.State)."
+				While (!$timeout -and ($runLinuxCmdJob.State -eq "Running")) {
+					# Write-Progress -Activity "Attempt : $attemptswot+$attemptswt : Executing $logCommand on $ip : $port" `
+					# 	-Status "Timeout in $($RunMaxAllowedTime - $($sw.elapsed.TotalSeconds)) seconds.." -Id $progressId -PercentComplete -1
+					if ($sw.elapsed.TotalSeconds -lt $RunMaxAllowedTime) {
+						$timeout = $false
 					}
 					else {
-						if ($attemptswt -eq $maxRetryCount -and $attemptswot -eq $maxRetryCount) {
-							Throw "Calling function - $($MyInvocation.MyCommand). Failed to execute : $MaskedCommand"
-						}
-						else {
-							Write-LogWarn "Failed to execute : $MaskedCommand. Retrying..."
-						}
+						$timeOut = $true
+						$sw.Stop()
+						Write-LogDbg "runLinuxCmdJob times out, stopping..."
+						Stop-Job $runLinuxCmdJob
 					}
 				}
-				else {
-					if ($returnCode) {
-						Write-LogDbg ($debugOutputString -replace "[sudo] password for $username`: ", "" -replace "Password: ", "")
-						Write-LogDbg "Command execution returned return code $returnCode Ignoring.."
-					}
+				# Write-LogDbg "Write-Progress querying Status: $($runLinuxCmdJob.State)."
+				# Write-Progress -Activity "Attempt : $attemptswot+$attemptswt : Executing $logCommand on $ip : $port" `
+				# 	-Status $runLinuxCmdJob.State -Id $progressId -Completed
+				$jobOut = Receive-Job $runLinuxCmdJob 2> $LogDir\$randomFileName
+				if ($jobOut) {
+					$jobOut = $jobOut.Replace("[sudo] password for $username`: ", "").Replace("Password: ", "")
+					$RunLinuxCmdOutput = ($jobOut | Select-Object -SkipLast 1) -Join [Environment]::NewLine
+				}
+				$LinuxExitCode = (Select-String -Pattern "AZURE-LINUX-EXIT-CODE-[0-9]*" -InputObject $jobOut).Matches.Value
+
+				Remove-Job $runLinuxCmdJob -Force -ErrorAction SilentlyContinue
+				if ($LinuxExitCode -imatch "AZURE-LINUX-EXIT-CODE-0") {
+					$shouldBreak = $true
+					$sw.Stop()
+					Write-LogDbg "$MaskedCommand executed successfully in $([math]::Round($($sw.elapsed.TotalSeconds), 2)) seconds."
 					$retValue = $RunLinuxCmdOutput.Trim()
-					break
+					Remove-Item $LogDir\$randomFileName -Force | Out-Null
+				}
+				else {
+					Get-Content $LogDir\$randomFileName | Foreach-Object { $debugOutputBuilder.AppendLine($_) | Out-Null }
+					Remove-Item $LogDir\$randomFileName -Force | Out-Null
+					if ($LinuxExitCode) {
+						$returnCode = $LinuxExitCode.Split("-")[4]
+					}
+					$debugOutputString = $debugOutputBuilder.ToString().Trim()
+					$debugOutputString = $debugOutputString -replace "[sudo] password for $username`: ", "" -replace "Password: ", ""
+					if ($debugOutputString -imatch "Unable to authenticate") {
+						Write-LogWarn "Unable to authenticate. Not retrying!"
+						Throw "Calling function - $($MyInvocation.MyCommand). Unable to authenticate"
+					}
+					if (!$ignoreLinuxExitCode) {
+						if ($returnCode) {
+							Write-LogErr "Failed to execute : $MaskedCommand"
+							Write-LogErr "$debugOutputString"
+							Write-LogWarn "Linux machine returned exit code : $returnCode"
+						}
+						if ($timeOut) {
+							$retValue = ""
+							if (-not $returnCode) {
+								Write-LogErr "Timeout while executing command : $MaskedCommand"
+								Write-LogErr "$debugOutputString"
+							}
+							Throw "Calling function - $($MyInvocation.MyCommand). Timeout while executing command : $MaskedCommand"
+						}
+						else {
+							if ($attemptswt -eq $maxRetryCount -and $attemptswot -eq $maxRetryCount) {
+								Throw "Calling function - $($MyInvocation.MyCommand). Failed to execute : $MaskedCommand"
+							}
+							else {
+								Write-LogWarn "Failed to execute : $MaskedCommand. Retrying..."
+							}
+						}
+					}
+					else {
+						if ($returnCode) {
+							Write-LogDbg ($debugOutputString -replace "[sudo] password for $username`: ", "" -replace "Password: ", "")
+							Write-LogDbg "Command execution returned return code $returnCode Ignoring.."
+						}
+						$retValue = $RunLinuxCmdOutput.Trim()
+						break
+					}
 				}
 			}
 		}
@@ -751,7 +760,7 @@ Function Get-LISAv2Tools($XMLSecretFile) {
 	# Copy required binary files to working folder
 	$CurrentDirectory = Get-Location
 	$CmdArray = @('7za.exe', 'dos2unix.exe', 'gawk', 'jq', 'plink.exe', 'pscp.exe', `
-			'kvp_client32', 'kvp_client64', 'kvp_client_arm64', 'lz4.exe')
+			'kvp_client32', 'kvp_client64', 'lz4.exe')
 
 	if ($XMLSecretFile) {
 		$WebClient = New-Object System.Net.WebClient

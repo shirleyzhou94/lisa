@@ -196,14 +196,18 @@ Class TestController {
 		}
 	}
 
-	[void] PrepareTestEnvironment($XMLSecretFile) {
+	[void] PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate) {
 		if ($XMLSecretFile) {
 			if (Test-Path -Path $XMLSecretFile) {
 				$this.XmlSecrets = ([xml](Get-Content $XMLSecretFile))
 				# Download the tools required for LISAv2 execution.
 				Get-LISAv2Tools -XMLSecretFile $XMLSecretFile
-				$this.UpdateXMLStringsFromSecretsFile()
-				$this.UpdateRegionAndStorageAccountsFromSecretsFile()
+
+				if (-not $SkipSecretsUpdate) {
+					$this.UpdateXMLStringsFromSecretsFile()
+					$this.UpdateRegionAndStorageAccountsFromSecretsFile()
+				}
+
 				$kustoDataDLLPath = $this.XmlSecrets.secrets.KustoDataDLLPath
 				if ($kustoDataDllPath -and (Test-Path "$kustoDataDLLPath")) {
 					[System.Reflection.Assembly]::LoadFrom("$kustoDataDllPath") | Out-Null

@@ -133,6 +133,14 @@ Function Assert-ResourceLimitationForDeployment($RGXMLData, [ref]$TargetLocation
 			$testVMSize = $VM.InstanceSize
 		}
 
+		# check if we need to run Connect-AzAccount
+		$Error.Clear()
+		Get-AzureAccount -ErrorAction SilentlyContinue
+		if($Error) {
+			Write-LogInfo "Get-AzureAccount failed due to Azure Credential issue, Re-Connect to Azure Account."
+			ReConnectAzureAccount -force
+		}
+
 		if (!$AllTestVMSizes.$testVMSize) {
 			Measure-SubscriptionCapabilities
 		}
@@ -527,7 +535,7 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 			$terms = Get-AzMarketplaceTerms -Publisher $publisher -Product $offer -Name $sku -ErrorAction SilentlyContinue
 			if ($terms -and !$terms.Accepted) {
 				Write-LogInfo "Accept terms for Publisher $publisher, Product $offer, Name $sku"
-				Set-AzMarketplaceTerms -Name $sku -Product $offer -Publisher $publisher -Accept
+				$terms | Set-AzMarketplaceTerms -Accept | Out-Null
 			}
 		}
 
@@ -1462,9 +1470,11 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 
 				$sharedImageInfo = $SharedImageName.Split('/')
 				if ($sharedImageInfo.Count -eq 4) {
-					Add-Content -Value "$($indents[6])^Id^: ^[resourceId('$($sharedImageInfo[0])', 'None', 'Microsoft.Compute/galleries/images/versions', '$($sharedImageInfo[1])', '$($sharedImageInfo[2])', '$($sharedImageInfo[3])')]^," -Path $jsonFile
+					$imageResource = "$($sharedImageInfo[1])/providers/Microsoft.Compute/galleries/$($sharedImageInfo[1])/images/$($sharedImageInfo[2])/versions/$($sharedImageInfo[3])"
+					Add-Content -Value "$($indents[6])^Id^: ^/subscriptions/$($sharedImageInfo[0])/resourceGroups/$imageResource^," -Path $jsonFile
 				} else {
-					Add-Content -Value "$($indents[6])^Id^: ^[resourceId(subscription().subscriptionId, 'None', 'Microsoft.Compute/galleries/images/versions', '$($sharedImageInfo[0])', '$($sharedImageInfo[1])', '$($sharedImageInfo[2])')]^," -Path $jsonFile
+					$imageResource = "$($sharedImageInfo[0])/providers/Microsoft.Compute/galleries/$($sharedImageInfo[0])/images/$($sharedImageInfo[1])/versions/$($sharedImageInfo[2])"
+					Add-Content -Value "$($indents[6])^Id^: ^[concat('/subscriptions/',subscription().subscriptionId,'/resourceGroups/$imageResource')]^," -Path $jsonFile
 				}
 				Add-Content -Value "$($indents[5])}," -Path $jsonFile
 			}
@@ -1491,8 +1501,7 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 						Add-Content -Value "$($indents[6])^caching^: ^ReadOnly^," -Path $jsonFile
 						Add-Content -Value "$($indents[6])^diffDiskSettings^: " -Path $jsonFile
 						Add-Content -Value "$($indents[6]){" -Path $jsonFile
-						Add-Content -Value "$($indents[7])^option^: ^local^," -Path $jsonFile
-						Add-Content -Value "$($indents[7])^placement^: ^ResourceDisk^" -Path $jsonFile
+						Add-Content -Value "$($indents[7])^option^: ^local^" -Path $jsonFile
 						Add-Content -Value "$($indents[6])}," -Path $jsonFile
 					}
 					else {
@@ -1552,8 +1561,7 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 						Add-Content -Value "$($indents[6])^caching^: ^ReadOnly^," -Path $jsonFile
 						Add-Content -Value "$($indents[6])^diffDiskSettings^: " -Path $jsonFile
 						Add-Content -Value "$($indents[6]){" -Path $jsonFile
-						Add-Content -Value "$($indents[7])^option^: ^local^," -Path $jsonFile
-						Add-Content -Value "$($indents[7])^placement^: ^ResourceDisk^" -Path $jsonFile
+						Add-Content -Value "$($indents[7])^option^: ^local^" -Path $jsonFile
 						Add-Content -Value "$($indents[6])}," -Path $jsonFile
 					}
 					else {
@@ -2114,6 +2122,15 @@ Function Invoke-ResourceGroupDeployment([string]$RGName, $TemplateFile, $UseExis
 	$retValue = $false
 	$errMsg = ""
 	$ResourceGroupDeploymentName = "eosg" + (Get-Date).Ticks
+
+	# check if we need to run Connect-AzAccount
+	$Error.Clear()
+	Get-AzResourceGroup -Name $RGName -ErrorAction SilentlyContinue
+	if($Error) {
+		Write-LogInfo "Get-AzResourceGroup failed due to Azure Credential issue, Re-Connect to Azure Account."
+		ReConnectAzureAccount -force
+	}
+
 	try {
 		Write-LogInfo "Testing Deployment using $TemplateFile ..."
 		$testRGDeployment = Test-AzResourceGroupDeployment -ResourceGroupName $RGName -TemplateFile $TemplateFile -Verbose
@@ -2199,6 +2216,10 @@ Function Get-AllDeploymentData([string]$ResourceGroups, [string]$PatternOfResour
 	if ($UseExistingRG) {
 		$MaxRetryCount = 5
 	}
+
+	# Fix PS Azure credential issue
+	ReConnectAzureAccount
+
 	foreach ($ResourceGroup in $ResourceGroups.Split("^")) {
 		Write-LogInfo "Collecting $ResourceGroup data.."
 
@@ -2367,6 +2388,11 @@ Function Get-LISAStorageAccount ($ResourceGroupName, $Name) {
 			Write-LogInfo "[Attempt $retryCount/$maxRetryCount] : Getting Existing Storage account information..."
 			if (!$ResourceGroupName -and !$Name) {
 				$GetAzureRMStorageAccount = Get-AzStorageAccount
+				# if 0 storage account, authenticate PS session and retry
+				if($GetAzureRMStorageAccount.Count -eq 0) {
+					ReConnectAzureAccount -force
+					$GetAzureRMStorageAccount = Get-AzStorageAccount
+				}
 				Write-LogInfo "Get $($GetAzureRMStorageAccount.Count) storage accounts"
 				break
 			}
@@ -2483,7 +2509,7 @@ Function Set-SRIOVinAzureVMs {
 					}
 				}
 				else {
-					if (-not ($AllNics.EnableAcceleratedNetworking.Contains($false) -or $AllNics.EnableAcceleratedNetworking.Contains($null))) {
+					if (-not $AllNics.EnableAcceleratedNetworking.Contains($false)) {
 						$StatusChangeNotRequired = $true
 					}
 				}
@@ -2549,7 +2575,7 @@ Function Set-SRIOVinAzureVMs {
 					$VMPropertiesChanged = $false
 				}
 				else {
-					$TargettedNics = $AllNics | Where-Object { $_.EnableAcceleratedNetworking -eq $false -or $_.EnableAcceleratedNetworking -eq $null }
+					$TargettedNics = $AllNics | Where-Object { $_.EnableAcceleratedNetworking -eq $false }
 					Write-LogInfo "Current Accelerated networking disabled NICs : $($TargettedNics.Name)"
 					Write-LogInfo "Shutting down $VMName..."
 					$null = Stop-AzVM -ResourceGroup $ResourceGroup -Name $VMName -Force
@@ -2712,8 +2738,16 @@ Function Add-ResourceGroupTag {
 		[string] $TagValue
 	)
 	try {
-		Write-LogInfo "Setting $ResourceGroup tag : $TagName = $TagValue"
-		$ExistingTags = (Get-AzResourceGroup -Name $ResourceGroup).Tags
+		Write-LogInfo "Setting $ResourceGroup tag : $TagName = $TagValue" 
+
+		$Error.Clear()
+		$ExistingTags = (Get-AzResourceGroup -Name $ResourceGroup -ErrorAction SilentlyContinue).Tags 
+		if(!$ExistingTags -or ($Error) ) {
+			Write-LogInfo "Get-AzResourceGroup failed due to Azure Credential issue, Re-Connect to Azure Account."
+			ReConnectAzureAccount -force
+			$ExistingTags = (Get-AzResourceGroup -Name $ResourceGroup).Tags
+		}
+
 		if ( $ExistingTags.Keys.Count -gt 0 ) {
 			$ExistingKeyUpdated = $false
 			foreach ($Key in $ExistingTags.Keys) {

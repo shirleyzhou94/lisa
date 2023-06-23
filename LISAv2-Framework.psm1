@@ -62,6 +62,7 @@ function Start-LISAv2 {
 		# [Optional] Parameters for changing framework behavior.
 		[int]    $TestIterations = 1,
 		[string] $XMLSecretFile = "",
+		[switch] $SkipSecretsUpdate,
 		[switch] $EnableTelemetry,
 		[switch] $UseExistingRG,
 
@@ -180,7 +181,7 @@ function Start-LISAv2 {
 				$XMLSecretFile = $env:Azure_Secrets_File
 				Write-LogInfo "The Secrets file is defined by an environment variable."
 			}
-			$testController.PrepareTestEnvironment($XMLSecretFile)
+			$testController.PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate)
 
 			# Validate all the XML files and then import test cases from them for test
 			Validate-XmlFiles -ParentFolder (Join-Path $workingDirectory "XML")

@@ -29,11 +29,17 @@ function Start-Validation {
 
     $expectedGPUBridgeCount = 0
     $gpuName = "Tesla"
+    # TODO: Adding device pattern for NVv5 A10 (Nvidia A10 GPU)
+    # Device_ID = {11e3f411-9555-478e-ba29-41088a8c33a5}
     $deviceIDPattern = "Device_ID.*47505500"
     if ($allVMData.InstanceSize -imatch "Standard_ND96") {
         $gpuName = "A100-SXM"
         $expectedGPUBridgeCount = 6
         $deviceIDPattern = "Device_ID.*44450000"
+    } elseif ($allVMData.InstanceSize -imatch "Standard_NC96") {
+        $gpuName = "A100"
+        $expectedGPUBridgeCount = 0
+        $deviceIDPattern = "Device_ID.*444532304235"
     }
 
     # region PCI Express pass-through in lsvmbus
@@ -49,7 +55,7 @@ function Start-Validation {
     # Scope to match GPUs only since there can be other pass-through devices
     $pciExpressCount = (Select-String -Path $LogDir\PCI-Express-passthrough.txt -Pattern $deviceIDPattern).Matches.Count
     if ( $pciExpressCount -gt 0 ) {
-        Write-Debug "Successfully found more than a PCI Expess device "
+        Write-Debug "Successfully found more than a PCI Expess device"
     } else {
         Write-Error "Could not find the PCI Express device count"
     }
@@ -81,6 +87,7 @@ function Start-Validation {
         Write-Error "Failed to fetch the lspci command result"
     }
     Set-Content -Value $lspci -Path $LogDir\lspci.txt -Force
+
     $lspciCount = (Select-String -Path $LogDir\lspci.txt -Pattern "NVIDIA Corporation").Matches.Count
     if ($lspciCount -eq ($expectedGPUCount + $expectedGPUBridgeCount)) {
         $currentResult = $resultPass
@@ -123,7 +130,7 @@ function Start-Validation {
     #region nvidia-smi
     $nvidiasmi = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort `
         -username $superuser -password $password "nvidia-smi" -ignoreLinuxExitCode
-    if ( $nvdiasmi ) {
+    if ( $nvidiasmi ) {
         Write-Debug "Successfully fetched the nvidia-smi command result"
     } else {
         Write-Error "Failed to fetch the nvidia-smi command result"
@@ -142,6 +149,52 @@ function Start-Validation {
     $resultArr += $currentResult
     $CurrentTestResult.TestSummary += New-ResultSummary -testResult $currentResult -metaData $metaData `
         -checkValues "PASS,FAIL,ABORTED" -testName $CurrentTestData.testName
+    # return $failureCount
+    #endregion
+
+    #region nvidia-smi GRID license check
+    # if($driver -eq "GRID" ){
+    #     $nvidiasmi = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort `
+    #         -username $superuser -password $password "nvidia-smi -q" -ignoreLinuxExitCode
+    #     Set-Content -Value $nvidiasmi -Path $LogDir\nvidia-smi-q.txt -Force
+    #     $gridEnabledCount = (Select-String -Path $LogDir\nvidia-smi-q.txt -Pattern "GRID enabled").Matches.Count
+    #     if ($gridEnabledCount -eq $expectedGPUCount) {
+    #         $currentResult = $resultPass
+    #     } else {
+    #         $currentResult = $resultFail
+    #         $failureCount += 1
+    #     }
+    #     $metaData = "nvidia-smi: Expected GRID-enabled GPUs: $expectedGPUCount, found inside the VM: $gridEnabledCount"
+    #     $resultArr += $currentResult
+    #     $CurrentTestResult.TestSummary += New-ResultSummary -testResult $currentResult -metaData $metaData `
+    #         -checkValues "PASS,FAIL,ABORTED" -testName $CurrentTestData.testName
+    # }
+    # return $failureCount
+    #endregion
+
+    # NVLink check
+    if ($allVMData.InstanceSize -imatch "Standard_NC96") {
+        $nvlink = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort `
+            -username $superuser -password $password "nvidia-smi nvlink -s" -ignoreLinuxExitCode
+        Set-Content -Value $nvlink -Path $LogDir\nvidia-nvlink-s.txt -Force
+        $expectedNVLinkCount = 12
+        $nvlinkCount = (Select-String -Path $LogDir\nvidia-nvlink-s.txt -Pattern "Link.*25 GB/s").Matches.Count
+        # tod0: MIG issue which will be fixed in Nov RdAgent + new osvhd, no ETA yet
+        # if ( ($nvlinkCount/$expectedGPUCount) -eq $expectedNVLinkCount ) {
+        #     $currentResult = $resultPass
+        #     Write-Debug "Successfully verified nvlinks: ($nvlinkCount/$expectedGPUCount)"
+        # } else {
+        #     $currentResult = $resultFail
+        #     $failureCount += 1
+        #     Write-Error "Successfully verified nvlinks. Expected: ($expectedNVLinkCount), found: ($nvlinkCount/$expectedGPUCount)"
+        # }
+
+        $metaData = "nvidia-smi nvlink-s: Expected NVLink / GPU: $expectedNVLinkCount, found inside the VM: ($nvlinkCount/$expectedGPUCount) "
+        $resultArr += $currentResult
+        $CurrentTestResult.TestSummary += New-ResultSummary -testResult $currentResult -metaData $metaData `
+            -checkValues "PASS,FAIL,ABORTED" -testName $CurrentTestData.testName
+    }
+    #endregion
     return $failureCount
 }
 
@@ -153,7 +206,7 @@ function Collect-Logs {
     # We first need to move copy from root folder to user folder for
     # Collect-TestLogs function to work
     Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
-        -password $password -command "cp * /home/$user" -ignoreLinuxExitCode:$true
+        -password $password -maxRetryCount 5 -command "cp * /home/$user" -ignoreLinuxExitCode:$true
     Collect-TestLogs -LogsDestination $LogDir -ScriptName `
         $currentTestData.files.Split('\')[3].Split('.')[0] -TestType "sh" -PublicIP `
         $allVMData.PublicIP -SSHPort $allVMData.SSHPort -Username $user `
@@ -220,6 +273,17 @@ function Main {
             -command $cmdAddConstants | Out-Null
         Write-Debug "Added GPU driver name to constants.sh file"
 
+        # $UseHPCImage = $CurrentTestData.TestParameters.param.Contains('usehpcimage=yes') 
+        $UseHPCImage = $false
+        # Issue: Nvidia Driver version 510 is broken on T4 VMs, rollback to older version 470
+        # Add Nvidia Driver version to constants.sh file if needed
+        if ($allVMData.InstanceSize -imatch "Standard_NC64as_T4_v3") {
+            $cmdAddConstants = "echo -e `"NVIDIAVersion=470`" >> constants.sh"
+            Run-LinuxCmd -username $superuser -password $password -ip $allVMData.PublicIP -port $allVMData.SSHPort `
+                -command $cmdAddConstants | Out-Null
+            Write-LogInfo "Added GPU driver version to constants.sh file"
+        }
+
         # For CentOS and RedHat the requirement is to install LIS RPMs
         [int]$majorVersion = Run-LinuxCmd -username $user -password $password -ip $allVMData.PublicIP -port $allVMData.SSHPort `
             -command ". utils.sh && GetOSVersion && echo `$os_RELEASE"
@@ -271,31 +335,43 @@ function Main {
         }
 
         # Start the test script
-        Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
-            -password $password -command "/$superuser/${testScript}" -runMaxAllowedTime 1800 -ignoreLinuxExitCode | Out-Null
-        Write-Debug "Ran test script $testscript in the Guest OS"
+        if(!$UseHPCImage) {
+            $timeoutInSeconds = 2700
+            Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
+                -password $password -command "/$superuser/${testScript}" -runMaxAllowedTime $timeoutInSeconds -ignoreLinuxExitCode | Out-Null
+            Write-Debug "Ran test script $testscript in the Guest OS"
 
-        $installState = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
-            -password $password -command "cat /$superuser/state.txt"
-        Write-Debug "Found installState: $installState"
+            $installState = Run-LinuxCmd -ip $allVMData.PublicIP -port $allVMData.SSHPort -username $superuser `
+                -password $password -command "cat /$superuser/state.txt"
+            Write-Debug "Found installState: $installState"
 
-        if ($installState -eq "TestSkipped") {
-            $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "SKIPPED"
-            return $currentTestResult
-        }
+            if ($installState -eq "TestSkipped") {
+                $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "SKIPPED"
+                return $currentTestResult
+            }
 
-        if ($installState -imatch "TestAborted") {
-            Write-LogErr "GPU drivers installation aborted"
-            $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "ABORTED"
-            Collect-Logs
-            return $currentTestResult
-        }
+            if ($installState -imatch "TestAborted") {
+                Write-LogErr "GPU drivers installation aborted"
+                $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "ABORTED"
+                Collect-Logs
+                return $currentTestResult
+            }
 
-        if ($installState -ne "TestCompleted") {
-            Write-LogErr "Unable to install the GPU drivers!"
-            $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "FAIL"
-            Collect-Logs
-            return $currentTestResult
+            if ($installState -eq "TestRunning") {
+                Write-LogErr "GPU drivers installation did not finish in $timeoutInSeconds"
+                $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "ABORTED"
+                Collect-Logs
+                return $currentTestResult
+            }
+
+            if ($installState -ne "TestCompleted") {
+                Write-LogErr "Unable to install the GPU drivers!"
+                $currentTestResult.TestResult = Get-FinalResultHeader -resultarr "FAIL"
+                Collect-Logs
+                return $currentTestResult
+            }
+        } else {
+            Write-Debug "Using HPC Marketplace image, skip installing the GPU drivers!"
         }
 
         # Restart VM to load the driver and run validation
@@ -359,5 +435,6 @@ function Main {
     return $currentTestResult
 }
 
-Main -AllVmData $AllVmData -CurrentTestData $CurrentTestData -TestProvider $TestProvider `
+$vmData = $AllVmData | Select-Object -first 1
+Main -AllVmData $vmData -CurrentTestData $CurrentTestData -TestProvider $TestProvider `
     -TestParams (ConvertFrom-StringData $TestParams.Replace(";","`n"))

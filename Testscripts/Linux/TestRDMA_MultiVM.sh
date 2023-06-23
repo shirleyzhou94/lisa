@@ -44,11 +44,16 @@ function Collect_Logs() {
 	done
 
 	# Create zip file to avoid downloading thousands of files in some cases
-	zip -r /root/IMB_AllTestLogs.zip /root/IMB-*
-	rm -rf /root/IMB-*
-	if [[ $benchmark_type == "OMB" ]]; then
-		zip -r /root/OMB_AllTestLogs.zip /root/OMB-*
-		rm -rf /root/OMB-*
+	if command -v zip >/dev/null; then
+		zip -r /root/IMB_AllTestLogs.zip /root/IMB-*
+		if [ $? -eq 0 ]; then
+			rm -rf /root/IMB-*
+		fi
+
+		if [[ $benchmark_type == "OMB" ]]; then
+			zip -r /root/OMB_AllTestLogs.zip /root/OMB-*
+			rm -rf /root/OMB-*
+		fi
 	fi
 }
 
@@ -62,12 +67,13 @@ function Run_intel_IMB_Intranode() {
 
 	local ib_ifcs=$(ssh root@${vm1} ls /sys/class/net/ | grep ib)
 	for ifc in ${ib_ifcs};do
-	logmsg="${mpi_run_path} -hosts ${vm1},${vm2} -iface ${ifc} -ppn 1 -n 2 ${non_shm_mpi_settings} ${imb_mpi1_path} pingpong"
-	ssh root@${vm1} "source $vars > /dev/null;${mpi_run_path} -hosts ${vm1},${vm2} -iface ${ifc} -ppn 1 -n 2 ${non_shm_mpi_settings} ${imb_mpi1_path} pingpong >> ${logfile}"
-	[[ $? -ne 0 ]] && {
-		LogMsg "${logmsg} .. Failed"
-		return 1
-	} || LogMsg "${logmsg} .. Succeeded"
+		logmsg="${mpi_run_path} -hosts ${vm1},${vm2} -iface ${ifc} -ppn 1 -n 2 ${non_shm_mpi_settings} ${imb_mpi1_path} pingpong"
+		LogMsg "${logmsg}"
+		ssh root@${vm1} "source $vars > /dev/null;${mpi_run_path} -hosts ${vm1},${vm2} -iface ${ifc} -ppn 1 -n 2 ${non_shm_mpi_settings} ${imb_mpi1_path} pingpong >> ${logfile}"
+		[[ $? -ne 0 ]] && {
+			LogMsg "${logmsg} .. Failed"
+			return 1
+		} || LogMsg "${logmsg} .. Succeeded"
 	done
 	return 0
 }
@@ -108,8 +114,8 @@ function Run_IMB_Intranode() {
 						Run_intel_IMB_Intranode ${vm1} ${vm2} ${log_file}
 					;;
 					mvapich)
-						LogMsg "$mpi_run_path -n 2 $vm1 $vm2 $imb_mpi1_path pingpong"
-						ssh root@${vm1} "$mpi_run_path -n 2 $vm1 $vm2 $imb_mpi1_path pingpong >> $log_file"
+						LogMsg "$mpi_run_path -n 2 -hosts $vm1,$vm2 $imb_mpi1_path pingpong"
+						ssh root@${vm1} "$mpi_run_path -n 2 -hosts $vm1,$vm2 $imb_mpi1_path pingpong >> $log_file"
 					;;
 				esac
 				mpi_intranode_status=$?
@@ -167,8 +173,8 @@ function Run_IMB_MPI1() {
 				$mpi_run_path -hosts $master,$slaves -ppn $(($VM_Size / $total_virtual_machines)) -n $VM_Size $mpi_settings $imb_mpi1_path $extra_params > IMB-MPI1-AllNodes-output-Attempt-${attempt}.txt
 			;;
 			mvapich)
-				LogMsg "$mpi_run_path -n $(($mpi1_ppn * $total_virtual_machines)) $master $slaves_array $mpi_settings $imb_mpi1_path $extra_params"
-				$mpi_run_path -n $(($mpi1_ppn * $total_virtual_machines)) $master $slaves_array $mpi_settings $imb_mpi1_path $extra_params > IMB-MPI1-AllNodes-output-Attempt-${attempt}.txt
+				LogMsg "$mpi_run_path -n $(($mpi1_ppn * $total_virtual_machines)) -host $master,$slaves $mpi_settings $imb_mpi1_path $extra_params"
+				$mpi_run_path -n $(($mpi1_ppn * $total_virtual_machines)) -host $master,$slaves $mpi_settings $imb_mpi1_path $extra_params > IMB-MPI1-AllNodes-output-Attempt-${attempt}.txt
 			;;
 		esac
 		mpi_status=$?
@@ -204,6 +210,11 @@ function Run_OMB_P2P() {
 					LogMsg "ssh root@${master} $mpi_run_path -n $total_virtual_machines $master $slaves_array $omb_mpi_settings  numactl $numactl_settings  $omb_path/mpi/pt2pt/$test_name> OMB-P2P-AllNodes-output-Attempt-${attempt}-$test_name.txt"
 					ssh root@${master} "$mpi_run_path -n $total_virtual_machines $master $slaves_array $omb_mpi_settings numactl $numactl_settings $omb_path/mpi/pt2pt/$test_name> OMB-P2P-AllNodes-output-Attempt-${attempt}-$test_name.txt"
 				done
+			;;
+			hpcx)
+				# mpirun -np 2 --map-by ppr:1:node -x LD_LIBRARY_PATH numactl -c <> /opt/<hpcx-XX>/ompi/test/osu_benchmarks/osu_bibw
+				# LogMsg "$mpi_run_path -np $total_virtual_machines --map-by ppr:1:node -x LD_LIBRARY_PATH numactl -c <> $omb_path/ompi/test/osu_benchmarks/osu_bibw >  OMB-P2P-AllNodes-output-Attempt-${attempt}-$test_name.txt"
+				# $mpi_run_path -np $total_virtual_machines --map-by ppr:1:node -x LD_LIBRARY_PATH numactl -c <> $omb_path/ompi/test/osu_benchmarks/osu_bibw >  OMB-P2P-AllNodes-output-Attempt-${attempt}-$test_name.txt
 			;;
 			*)
 				LogErr "Test not yet available"
@@ -482,10 +493,49 @@ function Run_IMB_IO() {
 	fi
 }
 
+# Function to check the IP address of IB interface
+function check_ib_ip_address() {
+	local ib_if_status=0
+	local ib_error_cnt=0
+	local ib_total_error_cnt=0
+	for vm in $master $slaves_array; do
+		# if A100
+		if [[ $a100_sku == "yes" ]]; then
+			ib_nics=$(ssh root@${vm} ls /sys/class/net/ | grep ib)
+		fi
+		#ib_ifcs=$(ssh root@${vm} ls /sys/class/net/ | grep ib)
+		for ib_nic in ${ib_nics};do
+			LogMsg "Checking $ib_nic status in $vm"
+			# Verify ib_nic exists or not.
+			ssh root@${vm} "ip addr show $ib_nic | grep 'inet '" > /dev/null
+			ib_if_status=$?
+			ssh root@${vm} "ip addr show $ib_nic > $ib_nic-status-${vm}.txt"
+			scp root@${vm}:${ib_nic}-status-${vm}.txt .
+			if [ $ib_if_status -eq 0 ]; then
+				# Verify ib_nic has IP address, which means IB setup is ready
+				LogMsg "${ib_nic} IP detected for ${vm}."
+			else
+				# Verify no IP address on ib_nic, which means IB setup is not ready
+				LogErr "${ib_nic} failed to get IP address for ${vm}."
+				ib_error_cnt=$(($ib_error_cnt + $ib_if_status))
+				ib_total_error_cnt=$(($ib_error_cnt + $ib_total_error_cnt))
+			fi
+		done
+
+		if [ $ib_error_cnt -ne 0 ]; then
+			LogErr "INFINIBAND_VERIFICATION_FAILED_${ib_nic}"
+		else
+			LogMsg "INFINIBAND_VERIFICATION_SUCCESS_${ib_nic}"
+		fi
+	done
+
+	return $ib_total_error_cnt
+}
+
 # Function to validate the IB interface supported by VM
 function check_ib_interface_cnt() {
 	local exp_ib_cnt=1
-	[[ ! -z $VM_Size && $VM_Size == "96" ]] && exp_ib_cnt=8
+	[[ $a100_sku == "yes" ]] && exp_ib_cnt=8
 
 	for vm in $master $slaves_array; do
 		local ib_cnt=$(ssh root@${vm} ls /sys/class/net | grep -c ib)
@@ -547,15 +597,15 @@ function detect_ib_interface() {
 		for ib_name in ${ib_ifcs};do
 			ipaddr=$(ssh root@${vm} ip addr show $ib_name | awk -F ' *|:' '/inet /{print $3}' | cut -d / -f 1)
 			if [[ $? -eq 0 && ${ipaddr} ]]; then
-				LogMsg "Successfully queried $ib_name interface address, $ib from ${vm}."
+				LogMsg "Successfully queried $ib_name interface address, ${ipaddr} from ${vm}."
 			else
-				LogErr "Failed to query $ib_name interface address, $ib from ${vm}."
+				LogErr "Failed to query $ib_name interface address, ${ipaddr} from ${vm}."
 				final_pingpong_state=$(($final_pingpong_state + 1))
 				found_ib_interface=0
 			fi
 			LogMsg "Logging ${ib_name}_${vm} value: ${ipaddr}"
 			vm_id=$(echo $vm | sed -r 's!/.*!!; s!.*\.!!')
-			echo ib${idx}_${vm_id}=${ipaddr} >> /root/constants.sh
+			echo ${ib_name}_${vm_id}=${ipaddr} >> /root/constants.sh
 			idx=$((idx+1))
 		done
 	done
@@ -623,7 +673,6 @@ function Main() {
 	# This is common space for all three types of MPI testing
 	# Verify if ib_nic got IP address on All VMs in current cluster.
 	# ib_nic comes from constants.sh. where get those values from XML tags.
-	final_ib_nic_status=0
 	total_virtual_machines=0
 	err_virtual_machines=0
 	slaves_array=$(echo ${slaves} | tr ',' ' ')
@@ -633,11 +682,35 @@ function Main() {
 	# It's safer to obtain pkeys in the test script because some distros
 	# may require a reboot after the IB setup is completed
 	# Find the correct partition key for IB communicating with other VM
-	if [[ $is_nd == "no" ]]; then
+	if [[ $endure_sku == "no" ]]; then
+		# check ib driver
+		if ! command -v ibstatus >/dev/null; then
+			LogErr "ibstatus: command not found. Infiniband Driver is not installed. Stopping"
+			SetTestStateFailed
+			Collect_Logs
+			LogErr "INFINIBAND_VERIFICATION_FAILED_IBDRIVER"
+			exit 0
+		fi
+
+		ib_interfaces=$(ibstatus | grep 'Infiniband device' | awk '{print $3}' | tr -d "'")
+
+		# If dir doesn't exist bail out
+		for device in $ib_interfaces; do
+			if [ ! -d /sys/class/infiniband/${device} ]; then
+				LogErr "Device directory ${device} under /sys/class/infiniband doesn't exist. Can't retrieve PKEY info. Stopping"
+				SetTestStateFailed
+				Collect_Logs
+				LogErr "INFINIBAND_VERIFICATION_FAILED_${device}"
+				exit 0
+			fi
+		done
+
+		mlx_device_name=$(echo $ib_interfaces | awk '{print $1;}')
+
 		if [ -z ${MPI_IB_PKEY+x} ]; then
-			firstkey=$(cat /sys/class/infiniband/mlx5_0/ports/1/pkeys/0)
+			firstkey=$(cat /sys/class/infiniband/${mlx_device_name}/ports/1/pkeys/0)
 			LogMsg "Getting the first key $firstkey"
-			secondkey=$(cat /sys/class/infiniband/mlx5_0/ports/1/pkeys/1)
+			secondkey=$(cat /sys/class/infiniband/${mlx_device_name}/ports/1/pkeys/1)
 			LogMsg "Getting the second key $secondkey"
 
 			# Assign the bigger number to MPI_IB_PKEY
@@ -656,59 +729,64 @@ function Main() {
 		LogMsg "Skipped MPI_IB_PKEY query step in ND device"
 	fi
 
-	for vm in $master $slaves_array; do
-		LogMsg "Checking $ib_nic status in $vm"
-		# Verify ib_nic exists or not.
-		ssh root@${vm} "ip addr show $ib_nic | grep 'inet '" > /dev/null
-		ib_nic_status=$?
-		ssh root@${vm} "ip addr show $ib_nic > $ib_nic-status-${vm}.txt"
-		scp root@${vm}:${ib_nic}-status-${vm}.txt .
-		if [ $ib_nic_status -eq 0 ]; then
-			# Verify ib_nic has IP address, which means IB setup is ready
-			LogMsg "${ib_nic} IP detected for ${vm}."
-		else
-			# Verify no IP address on ib_nic, which means IB setup is not ready
-			LogErr "${ib_nic} failed to get IP address for ${vm}."
-			err_virtual_machines=$(($err_virtual_machines+1))
-		fi
-		final_ib_nic_status=$(($final_ib_nic_status + $ib_nic_status))
-		total_virtual_machines=$(($total_virtual_machines + 1))
-	done
-
-	if [ $final_ib_nic_status -ne 0 ]; then
-		LogErr "$err_virtual_machines VMs out of $total_virtual_machines did get IP address for $ib_nic. Aborting Tests"
-		SetTestStateFailed
-		Collect_Logs
-		LogErr "INFINIBAND_VERIFICATION_FAILED_${ib_nic}"
-		exit 0
-	else
-		# Verify all VM have ib_nic available for further testing
-		LogMsg "INFINIBAND_VERIFICATION_SUCCESS_${ib_nic}"
-		# Removing controller VM from total_virtual_machines count
-		total_virtual_machines=$(($total_virtual_machines - 1))
+	if [[ $a100_sku == "yes" ]]; then
+		pkeys=$(cat /sys/class/infiniband/mlx5_*/ports/1/pkeys/0)
+		for pkey in $pkeys; do
+			if [[ "$MPI_IB_PKEY" != "$pkey" ]]; then
+				LogErr "Partition key assignments are inconsistent among 8 NICs. pkeys are: $pkeys."
+				break
+			fi
+		done
 	fi
 
-    # ############################################################################################################
-	# Check the IB interface count
-	check_ib_interface_cnt
+	if [[ $endure_sku == "yes" ]]; then
+		# ND device loading takes time.
+		LogMsg "Waiting 60 seconds for ND interface load"
+		sleep 60
+	fi
+
+	for vm in $master $slaves_array; do
+		total_virtual_machines=$(($total_virtual_machines + 1))
+	done
+	# Removing controller VM from total_virtual_machines count
+	total_virtual_machines=$(($total_virtual_machines - 1))
+
+	check_ib_ip_address
 	if [ $? -ne 0 ]; then
-		LogErr "IB count check failed in VMs. Aborting further tests."
+		LogErr "Failed to get IP address for IB NIC. Aborting Tests"
 		SetTestStateFailed
 		Collect_Logs
-		LogMsg "IB INTERFACE CHECK FAILED"
 		exit 0
-	else
-		LogMsg "IB INTERFACE CHECK PASSED"
+	fi
+	# ############################################################################################################
+	# Check the IB interface count
+	if [[ $endure_sku == "no" ]];then
+		check_ib_interface_cnt
+		if [ $? -ne 0 ]; then
+			LogErr "IB count check failed in VMs. Aborting further tests."
+			SetTestStateFailed
+			Collect_Logs
+			LogErr "IB INTERFACE CHECK FAILED"
+			exit 0
+		else
+			LogMsg "IB INTERFACE CHECK PASSED"
+		fi
 	fi
 
 	# ############################################################################################################
 	# ib kernel modules verification
 	# mlx5_ib, rdma_cm, rdma_ucm, ib_ipoib, ib_umad shall be loaded in kernel
 	final_module_load_status=0
-	if [[ $is_nd == "yes" ]]; then
+	if [[ $endure_sku == "yes" ]]; then
 		kernel_modules="rdma_cm rdma_ucm ib_ipoib ib_umad"
 	else
-		kernel_modules="mlx5_ib rdma_cm rdma_ucm ib_ipoib ib_umad"
+		# Check for CX3-Pro
+		if [ -d /sys/class/infiniband/mlx4_0 ]; then
+			mlx_device_name="mlx4"
+		else
+			mlx_device_name="mlx5"
+		fi
+		kernel_modules="${mlx_device_name}_ib rdma_cm rdma_ucm ib_ipoib ib_umad"
 	fi
 
 	for vm in $master $slaves_array; do
@@ -732,42 +810,41 @@ function Main() {
 	# ibv_devinfo verifies PORT STATE
 	# PORT_ACTIVE (4) is expected. If PORT_DOWN (1), it fails
 	# wait 5-second for port establishment
-	if [[ $is_nd == "yes" ]]; then
-		# ND device loading takes time.
-		LogMsg "Waiting 60 seconds for ND interface load"
-		sleep 60
-	fi
-	ib_port_state_down_cnt=0
-	min_port_state_up_cnt=0
-	for vm in $master $slaves_array; do
-		min_port_state_up_cnt=$(($min_port_state_up_cnt + 1))
-		check_ib_port_status ${vm}
-		if [[ $? -eq 0 ]]; then
-			LogMsg "$vm ib port is up - Succeeded"
-		else
-			LogErr "$vm ib port is down"
-			LogErr "Will remove the VM with bad port from constants.sh"
-			sed -i "s/${vm},\|,${vm}//g" ${__LIS_CONSTANTS_FILE}
-			ib_port_state_down_cnt=$(($ib_port_state_down_cnt + 1))
-		fi
-	done
-	min_port_state_up_cnt=$((min_port_state_up_cnt / 2))
-	# If half of the VMs (or more) are affected, the test will fail
-	if [ $ib_port_state_down_cnt -ge $min_port_state_up_cnt ]; then
-		LogErr "IMB-MPI1 ib port state check failed in $ib_port_state_down_cnt VMs. Aborting further tests."
-		SetTestStateFailed
-		Collect_Logs
-		LogMsg "INFINIBAND_VERIFICATION_FAILED_MPI1_PORTSTATE"
-		exit 0
-	else
-		LogMsg "INFINIBAND_VERIFICATION_SUCCESS_MPI1_PORTSTATE"
-	fi
-	# Refresh slave array and total_virtual_machines
-	if [ $ib_port_state_down_cnt -gt 0 ]; then
-		. ${__LIS_CONSTANTS_FILE}
-		slaves_array=$(echo ${slaves} | tr ',' ' ')
-		total_virtual_machines=$(($total_virtual_machines - $ib_port_state_down_cnt))
+
+	if [[ $endure_sku == "no" ]];then
 		ib_port_state_down_cnt=0
+		min_port_state_up_cnt=0
+
+		for vm in $master $slaves_array; do
+			min_port_state_up_cnt=$(($min_port_state_up_cnt + 1))
+			check_ib_port_status ${vm}
+			if [[ $? -eq 0 ]]; then
+				LogMsg "$vm ib port is up - Succeeded"
+			else
+				LogErr "$vm ib port is down"
+				LogErr "Will remove the VM with bad port from constants.sh"
+				sed -i "s/${vm},\|,${vm}//g" ${__LIS_CONSTANTS_FILE}
+				ib_port_state_down_cnt=$(($ib_port_state_down_cnt + 1))
+			fi
+		done
+		min_port_state_up_cnt=$((min_port_state_up_cnt / 2))
+		# If half of the VMs (or more) are affected, the test will fail
+		if [ $ib_port_state_down_cnt -ge $min_port_state_up_cnt ]; then
+			LogErr "IMB-MPI1 ib port state check failed in $ib_port_state_down_cnt VMs. Aborting further tests."
+			SetTestStateFailed
+			Collect_Logs
+			LogMsg "INFINIBAND_VERIFICATION_FAILED_MPI1_PORTSTATE"
+			exit 0
+		else
+			LogMsg "INFINIBAND_VERIFICATION_SUCCESS_MPI1_PORTSTATE"
+		fi
+		# Refresh slave array and total_virtual_machines
+		if [ $ib_port_state_down_cnt -gt 0 ]; then
+			. ${__LIS_CONSTANTS_FILE}
+			slaves_array=$(echo ${slaves} | tr ',' ' ')
+			total_virtual_machines=$(($total_virtual_machines - $ib_port_state_down_cnt))
+			ib_port_state_down_cnt=0
+		fi
 	fi
 
 	# ############################################################################################################
@@ -819,7 +896,7 @@ function Main() {
 	final_pingpong_state=0
 	found_ib_interface=1
 
-	if [[ $is_nd == "no" ]]; then
+	if [[ $endure_sku == "no" ]]; then
 		# Getting ibX(x=0..8) interface address and store in constants.sh
 		detect_ib_interface
 
@@ -878,19 +955,45 @@ function Main() {
 		;;
 		intel)
 			total_virtual_machines=$(($total_virtual_machines + 1))
-			vars=$(find / -name setvars.sh | grep oneapi)
-			source $vars > /dev/null
-			imb_mpi1_path=$(find / -name IMB-MPI1 | grep oneapi)
-			imb_rma_path=$(find / -name IMB-RMA | grep oneapi)
-			imb_nbc_path=$(find / -name IMB-NBC | grep oneapi)
-			mpi_run_path=$(find / -name mpirun | grep oneapi)
-			imb_p2p_path=$(find / -name IMB-P2P | grep oneapi)
-			imb_io_path=$(find / -name IMB-IO | grep oneapi)
+			# if [[ $DISTRO == "ubuntu_16.04" || $DISTRO == 'centos_7' ]]; then
+			if [[ $DISTRO == "ubuntu_16.04" ]]; then
+				# GPCv1 Ubuntu 16.04
+				vars=$(find / -name mpivars.sh | grep intel)
+				source $vars
+				imb_mpi1_path=$(find / -name IMB-MPI1 | grep intel64 | head -n 1)
+				imb_rma_path=$(find / -name IMB-RMA | grep intel64 | head -n 1)
+				imb_nbc_path=$(find / -name IMB-NBC | grep intel64 | head -n 1)
+				mpi_run_path=$(find / -name mpirun | grep intel64 | head -n 1)
+			# elif [[ $DISTRO == "centos_7" ]]; then
+			# 	# HPCv2 centos 7.4, set to be decom'ed Auguest
+			# 	vars=$(find / -name mpivars.sh | grep intel)
+			# 	source $vars
+			# 	imb_mpi1_path=$(find / -name IMB-MPI1 | grep intel64 | head -n 1)
+			# 	imb_rma_path=$(find / -name IMB-RMA | grep intel64 | head -n 1)
+			# 	imb_nbc_path=$(find / -name IMB-NBC | grep intel64 | head -n 1)
+			# 	mpi_run_path=$(find / -name mpirun | grep intel64 | head -n 1)
+			else
+				# total_virtual_machines=$(($total_virtual_machines + 1))
+				vars=$(find / -name setvars.sh | grep oneapi)
+				source $vars > /dev/null
+				imb_mpi1_path=$(find / -name IMB-MPI1 | grep oneapi)
+				imb_rma_path=$(find / -name IMB-RMA | grep oneapi)
+				imb_nbc_path=$(find / -name IMB-NBC | grep oneapi)
+				mpi_run_path=$(find / -name mpirun | grep oneapi)
+				imb_p2p_path=$(find / -name IMB-P2P | grep oneapi)
+				imb_io_path=$(find / -name IMB-IO | grep oneapi)
+			fi
 		;;
 		mvapich)
-			omb_path=$(find / -name osu_benchmarks | tail -n 1)
+			# omb_path=$(find / -name osu_benchmarks | tail -n 1)
 			total_virtual_machines=$(($total_virtual_machines + 1))
-			mpi_run_path=$(find / -name mpirun_rsh | tail -n 1)
+			if [[ $usehpcimage == "yes" ]]; then
+				# only works for hpc images
+				# ubuntu 2004 /opt/mvapich2-2.3.6/bin/mpirun did not work with the argument, switch to use Intel MPI
+				mpi_run_path=$(find / -name mpirun_rsh | tail -n 1)
+			else
+				mpi_run_path=/usr/local/bin/mpirun
+			fi
 		;;
 		*)
 			LogErr "MPI not supported"
@@ -938,9 +1041,9 @@ function Main() {
 
 	# Get all results and finish the test
 	Collect_Logs
-	finalStatus=$(($final_ib_nic_status + $ib_port_state_down_cnt + $alloc_uar_limited_cnt + $final_mpi_intranode_status + $imb_mpi1_final_status + $imb_nbc_final_status + $omb_p2p_final_status))
+	finalStatus=$(($ib_port_state_down_cnt + $alloc_uar_limited_cnt + $final_mpi_intranode_status + $imb_mpi1_final_status + $imb_nbc_final_status + $omb_p2p_final_status))
 	if [ $finalStatus -ne 0 ]; then
-		LogMsg "${ib_nic}_status: $final_ib_nic_status"
+		# LogMsg "ib_nics_status: $final_ib_nics_status"
 		LogMsg "ib_port_state_down_cnt: $ib_port_state_down_cnt"
 		LogMsg "alloc_uar_limited_cnt: $alloc_uar_limited_cnt"
 		LogMsg "final_mpi_intranode_status: $final_mpi_intranode_status"

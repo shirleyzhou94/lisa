@@ -60,8 +60,8 @@ Class ReadyController : TestController
 		}
 	}
 
-	[void] PrepareTestEnvironment($XMLSecretFile) {
-		([TestController]$this).PrepareTestEnvironment($XMLSecretFile)
+	[void] PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate) {
+		([TestController]$this).PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate)
 		$readyVConfig = $this.GlobalConfig.Global.Ready
 		$secrets = $this.XmlSecrets.secrets
 		if ($this.XMLSecrets) {

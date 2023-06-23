@@ -100,7 +100,7 @@ Class AzureController : TestController {
 			$parameterCount = $this.SharedImageGallery.Split("/").Trim().Count
 			if ($parameterCount -lt 3 -or $parameterCount -gt 4) {
 				$parameterErrors += "Invalid value for the provided SharedImageGallery parameter: <'$($this.SharedImageGallery)'>." + `
-						"The SharedImageGallery should be in the format: '<subscription_id>/<image_gallery>/<image_definition>/<image_version>' " + `
+						"The SharedImageGallery should be in the format: 'subscription_id>/<image_gallery>/<image_definition>/<image_version>' " + `
 						"Or '<image_gallery>/<image_definition>/<image_version>' if the shared image gallery is in the same subscription that is used to run LISA."
 			}
 		}
@@ -153,7 +153,7 @@ Class AzureController : TestController {
 		}
 	}
 
-	[void] PrepareTestEnvironment($XMLSecretFile) {
+	[void] PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate) {
 		if ($XMLSecretFile -and (Test-Path $XMLSecretFile)) {
 			# Connect AzureAccount and Set Azure Context
 			Add-AzureAccountFromSecretsFile -CustomSecretsFilePath $XMLSecretFile
@@ -179,7 +179,7 @@ Class AzureController : TestController {
 			}
 		}
 		# Invoke Base.PrepareTestEnvironment($XMLSecretFile)
-		([TestController]$this).PrepareTestEnvironment($XMLSecretFile)
+		([TestController]$this).PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate)
 		$RegionAndStorageMapFile = "$PSScriptRoot\..\XML\RegionAndStorageAccounts.xml"
 		if (Test-Path $RegionAndStorageMapFile) {
 			$RegionAndStorageMap = [xml](Get-Content $RegionAndStorageMapFile)
@@ -305,6 +305,9 @@ Class AzureController : TestController {
 		if (!$global:AllTestVMSizes) {
 			Set-Variable -Name AllTestVMSizes -Value @{} -Option ReadOnly -Scope Global
 		}
+
+		# Set global secret file
+		Set-Variable -Name XmlSecrets -Value $this.XmlSecrets -Scope Global -Force
 	}
 
 	[void] PrepareSetupTypeToTestCases([hashtable]$SetupTypeToTestCases, [System.Collections.ArrayList]$AllTests) {
@@ -368,9 +371,6 @@ Class AzureController : TestController {
 			}
 			if ($this.CustomParams["vTPM"] -imatch "^(true|false)$") {
 				Add-SetupConfig -AllTests $AllTests -ConfigName "vTPM" -ConfigValue $this.CustomParams["vTPM"].ToLower() -Force $this.ForceCustom
-			}
-			if ($this.CustomParams["SecurityType"]) {
-				Add-SetupConfig -AllTests $AllTests -ConfigName "SecurityType" -ConfigValue $this.CustomParams["SecurityType"] -Force $this.ForceCustom
 			}
 		}
 

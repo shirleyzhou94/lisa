@@ -1,16 +1,16 @@
 <TestCases>
   <!-- INTEL MPI -->
   <test>
-    <testName>INFINIBAND-INTEL-MPI-2VM</testName>
+    <testName>INFINIBAND-INTEL-MPI-2VM-BASIC</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>3</Priority>
+    <Priority>0</Priority>
     <TestParameters>
       <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_INTEL_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_INTEL_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_INTEL_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_INTEL_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -32,9 +32,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
-      <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
+      <param>quicktest_only=yes</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -42,11 +42,12 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>TwoVM1Dep</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_N[CD][0-9]+r\S*,Standard_ND96asr_v4,Standard_ND96amsr_A100_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
-    <testName>INFINIBAND-INTEL-MPI-32VM</testName>
+  <testName>INFINIBAND-INTEL-MPI-32VM</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
     <Priority>3</Priority>
@@ -55,7 +56,7 @@
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_INTEL_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_INTEL_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_INTEL_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_INTEL_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -77,9 +78,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
+	    <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
       <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -87,21 +88,22 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>RDMA32VMs</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_NC[0-9]+r\S*</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <!-- OPEN MPI -->
   <test>
-    <testName>INFINIBAND-OPEN-MPI-2VM</testName>
+  <testName>INFINIBAND-OPEN-MPI-2VM-BASIC</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>1</Priority>
+    <Priority>0</Priority>
     <TestParameters>
       <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_OPEN_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_OPEN_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_OPEN_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_OPEN_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -123,9 +125,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
-      <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
+      <param>quicktest_only=yes</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -133,11 +135,12 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>TwoVM1Dep</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_NC[0-9]+r\S*</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
-    <testName>INFINIBAND-OPEN-MPI-32VM</testName>
+	<testName>INFINIBAND-OPEN-MPI-32VM</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
     <Priority>3</Priority>
@@ -146,7 +149,7 @@
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_OPEN_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_OPEN_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_OPEN_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_OPEN_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -168,9 +171,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
       <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -178,7 +181,8 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>RDMA32VMs</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_NC[0-9]+r\S*</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <!-- 	HPC-X MPI: Mellanox HPC-X links constantly changed, so can not support HPC-X. Leave the code, however.
@@ -194,7 +198,7 @@
 		<TestParameters>
 			<param>num_reboot="INFINIBAND_HPCX_TOTAL_REBOOT_COUNT"</param>
 			<param>mpi_settings="INFINIBAND_HPCX_MPI_SETTINGS_IB"</param>
-			<param>ib_nic="INFINIBAND_IB_NIC"</param>
+			<param>ib_nics="INFINIBAND_IB_NICS"</param>
 			<param>imb_mpi1_tests="INFINIBAND_HPCX_MPI_TESTNAMES"</param>
 			<param>mpi1_ppn=INFINIBAND_HPCX_PPN</param>
 			<param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -214,7 +218,6 @@
 			<param>hpcx_mpi_ofed=HPCX_PARTIAL_LINK_OFED</param>
 			<param>hpcx_mpi_inbox=HPCX_PARTIAL_LINK_INBOX</param>
 			<param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-			<param>walaagent_repo=WALAAgent_REPO</param>
 			<param>quicktest_only=no</param>
 		</TestParameters>
 		<Platform>Azure</Platform>
@@ -234,7 +237,7 @@
 		<TestParameters>
 			<param>num_reboot="INFINIBAND_HPCX_TOTAL_REBOOT_COUNT"</param>
 			<param>mpi_settings="INFINIBAND_HPCX_MPI_SETTINGS_IB"</param>
-			<param>ib_nic="INFINIBAND_IB_NIC"</param>
+			<param>ib_nics="INFINIBAND_IB_NICS"</param>
 			<param>imb_mpi1_tests="INFINIBAND_HPCX_MPI_TESTNAMES"</param>
 			<param>mpi1_ppn=INFINIBAND_HPCX_PPN</param>
 			<param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -254,7 +257,6 @@
 			<param>hpcx_mpi_ofed=HPCX_PARTIAL_LINK_OFED</param>
 			<param>hpcx_mpi_inbox=HPCX_PARTIAL_LINK_INBOX</param>
 			<param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-			<param>walaagent_repo=WALAAgent_REPO</param>
 			<param>quicktest_only=no</param>
 		</TestParameters>
 		<Platform>Azure</Platform>
@@ -267,13 +269,13 @@
     <testName>INFINIBAND-IBM-MPI-2VM</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>3</Priority>
+    <Priority>0</Priority>
     <TestParameters>
       <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_IBM_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_IBM_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_IBM_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_IBM_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -295,9 +297,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
       <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -305,7 +307,8 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>TwoVM1Dep</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_NC[0-9]+r\S*</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
@@ -318,7 +321,7 @@
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_IBM_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_IBM_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_IBM_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_IBM_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -340,9 +343,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
       <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -351,20 +354,21 @@
     <SetupConfig>
       <SetupType>RDMA32VMs</SetupType>
       <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <!-- MVAPICH MPI -->
   <test>
-    <testName>INFINIBAND-MVAPICH-MPI-2VM</testName>
+    <testName>INFINIBAND-MVAPICH-MPI-2VM-Basic</testName>
     <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
     <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>3</Priority>
+    <Priority>0</Priority>
     <TestParameters>
       <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_MVAPICH_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_MVAPICH_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_MVAPICH_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_MVAPICH_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -386,9 +390,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
-      <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
+	    <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
+      <param>quicktest_only=yes</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -396,8 +400,10 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>TwoVM1Dep</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_N[CD][0-9]+r\S*,Standard_ND96asr_v4,Standard_ND96amsr_A100_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
+	<SubtestValues>SOME,TEXTS,NEEDS,TO,BE,PRESENT,HERE,FOR,PRINTING,TEST,SUMMARY</SubtestValues>
   </test>
   <test>
     <testName>INFINIBAND-MVAPICH-MPI-32VM</testName>
@@ -409,7 +415,7 @@
       <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
       <param>num_reboot="INFINIBAND_MVAPICH_TOTAL_REBOOT_COUNT"</param>
       <param>mpi_settings="INFINIBAND_MVAPICH_MPI_SETTINGS_IB"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
+      <param>ib_nics="INFINIBAND_IB_NICS"</param>
       <param>imb_mpi1_tests="INFINIBAND_MVAPICH_MPI_TESTNAMES"</param>
       <param>mpi1_ppn=INFINIBAND_MVAPICH_PPN</param>
       <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
@@ -431,9 +437,9 @@
       <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
       <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
       <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
+      <param>endure_sku=INFINIBAND_ENDURE_SKU</param>
+      <param>usehpcimage=USE_HPCIMAGE</param>
       <param>quicktest_only=no</param>
-      <param>is_nd=no</param>
     </TestParameters>
     <Platform>Azure</Platform>
     <Category>Functional</Category>
@@ -441,100 +447,8 @@
     <Tags>rdma</Tags>
     <SetupConfig>
       <SetupType>RDMA32VMs</SetupType>
-      <OverrideVMSize>Standard_HC44rs</OverrideVMSize>
-    </SetupConfig>
-  </test>
-  <!-- ND with Intel MPI -->
-  <test>
-    <testName>INFINIBAND-INTEL-MPI-ND-2VM</testName>
-    <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
-    <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>3</Priority>
-    <TestParameters>
-      <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
-      <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
-      <param>num_reboot="INFINIBAND_INTEL_TOTAL_REBOOT_COUNT"</param>
-      <param>mpi_settings="INFINIBAND_INTEL_MPI_SETTINGS_ND"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
-      <param>imb_mpi1_tests="INFINIBAND_INTEL_MPI_ND_TESTNAMES"</param>
-      <param>mpi1_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
-      <param>imb_rma_tests="INFINIBAND_INTEL_RMA_TESTNAMES"</param>
-      <param>rma_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_rma_tests_iterations=INFINIBAND_INTEL_RMA_TEST_COUNT</param>
-      <param>imb_nbc_tests="INFINIBAND_INTEL_NBC_TESTNAMES"</param>
-      <param>nbc_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_nbc_tests_iterations=INFINIBAND_INTEL_NBC_TEST_COUNT</param>
-      <param>p2p_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_p2p_tests_iterations=INFINIBAND_INTEL_P2P_TEST_COUNT</param>
-      <param>io_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_io_tests_iterations=INFINIBAND_INTEL_IO_TEST_COUNT</param>
-      <param>mpi_type="intel"</param>
-      <param>benchmark_type="IMB"</param>
-      <param>mlx_ofed_partial_link=MLX_OFED_PARTIAL_LINK</param>
-      <param>ibm_platform_mpi=IBM_PLATFORM_MPI_DOWNLOAD</param>
-      <param>intel_mpi=INTEL_MPI_DOWNLOAD</param>
-      <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
-      <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
-      <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
-      <param>quicktest_only=yes</param> <!-- Do not change this param -->
-      <param>is_nd=yes</param>
-    </TestParameters>
-    <Platform>Azure</Platform>
-    <Category>Functional</Category>
-    <Area>INFINIBAND</Area>
-    <Tags>rdma</Tags>
-    <SetupConfig>
-      <SetupType>TwoVM1Dep</SetupType>
-      <OverrideVMSize>Standard_H16r,=~Standard_A[8-9],=~Standard_H16(r|mr)*$</OverrideVMSize>
-      <ARMImageName>=~CentOS-HPC\s7\.[0-6],=~CentOS-HPC\s6\.(5|8)</ARMImageName>
-    </SetupConfig>
-  </test>
-  <test>
-    <testName>INFINIBAND-INTEL-MPI-ND-32VM</testName>
-    <testScript>VERIFY-INFINIBAND-MultiVM.ps1</testScript>
-    <files>.\Testscripts\Linux\utils.sh,.\Testscripts\Linux\TestRDMA_MultiVM.sh,.\Testscripts\Linux\SetupRDMA.sh</files>
-    <Priority>3</Priority>
-    <TestParameters>
-      <param>install_ofed="INFINIBAND_INSTALL_OFED"</param>
-      <param>install_ofed_from_extension="INFINIBAND_INSTALL_OFED_FROM_EXTENSION"</param>
-      <param>num_reboot="INFINIBAND_INTEL_TOTAL_REBOOT_COUNT"</param>
-      <param>mpi_settings="INFINIBAND_INTEL_MPI_SETTINGS_ND"</param>
-      <param>ib_nic="INFINIBAND_IB_NIC"</param>
-      <param>imb_mpi1_tests="INFINIBAND_INTEL_MPI_ND_TESTNAMES"</param>
-      <param>mpi1_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_mpi1_tests_iterations=INFINIBAND_MPI_TEST_COUNT</param>
-      <param>imb_rma_tests="INFINIBAND_INTEL_RMA_TESTNAMES"</param>
-      <param>rma_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_rma_tests_iterations=INFINIBAND_INTEL_RMA_TEST_COUNT</param>
-      <param>imb_nbc_tests="INFINIBAND_INTEL_NBC_TESTNAMES"</param>
-      <param>nbc_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_nbc_tests_iterations=INFINIBAND_INTEL_NBC_TEST_COUNT</param>
-      <param>p2p_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_p2p_tests_iterations=INFINIBAND_INTEL_P2P_TEST_COUNT</param>
-      <param>io_ppn=INFINIBAND_INTEL_PPN</param>
-      <param>imb_io_tests_iterations=INFINIBAND_INTEL_IO_TEST_COUNT</param>
-      <param>mpi_type="intel"</param>
-      <param>benchmark_type="IMB"</param>
-      <param>mlx_ofed_partial_link=MLX_OFED_PARTIAL_LINK</param>
-      <param>ibm_platform_mpi=IBM_PLATFORM_MPI_DOWNLOAD</param>
-      <param>intel_mpi=INTEL_MPI_DOWNLOAD</param>
-      <param>open_mpi=OPEN_MPI_DOWNLOAD</param>
-      <param>mvapich_mpi=MVAPICH_MPI_DOWNLOAD</param>
-      <param>intel_mpi_benchmark=INTEL_MPI_BENCHMARK_DOWNLOAD</param>
-      <param>walaagent_repo=WALAAgent_REPO</param>
-      <param>quicktest_only=yes</param> <!-- Do not change this param -->
-      <param>is_nd=yes</param>
-    </TestParameters>
-    <Platform>Azure</Platform>
-    <Category>Functional</Category>
-    <Area>INFINIBAND</Area>
-    <Tags>rdma</Tags>
-    <SetupConfig>
-      <SetupType>RDMA32VMs</SetupType>
-      <OverrideVMSize>Standard_H16r,=~Standard_A[8-9],=~Standard_H16(r|mr)*$</OverrideVMSize>
-      <ARMImageName>=~CentOS-HPC\s7\.[0-6],=~CentOS-HPC\s6\.(5|8)</ARMImageName>
+      <OverrideVMSize>Standard_H16mr,=~Standard_H[BC][0-9]+rs\S*,=~Standard_NC[0-9]+r\S*</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
 </TestCases>

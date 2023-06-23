@@ -56,12 +56,6 @@ Param(
 	# [Required] for Azure.
 	[string] $TestLocation="",
 	[string] $ARMImageName = "",
-	# Required for Azure if -ARMImageName and -OsVHD are not provided
-	# If the shared image is in the same subscription that is used to run LISA, this parameter can be:
-	#     <image_gallery>/<image_definition>/<image_version>
-	# otherwise, this parameter should be:
-	#     <subscription_id>/<image_gallery>/<image_definition>/<image_version>
-	[string] $SharedImageGallery = "",
 	[string] $StorageAccount="",
 
 	# [Required] for Two Hosts HyperV
@@ -69,16 +63,14 @@ Param(
 
 	# [Required] Common for HyperV and Azure.
 	[string] $RGIdentifier = "",
-	[string] $OsVHD = "",   #... [Azure: Required only if -ARMImageName and -SharedImageGallery are not provided.]
+	[string] $OsVHD = "",   #... [Azure: Required only if -ARMImageName is not provided.]
 							#... [HyperV: Mandatory]
 							#... [WSL: Mandatory, which can be the URL of the distro, or the path to the distro file on the local host]
-							#... [Ready: Not needed, and will be ignored if provided]
 	[string] $TestCategory = "",
 	[string] $TestArea = "",
 	[string] $TestTag = "",
 	[string] $TestNames="",
 	[string] $TestPriority="",
-	[string] $TestSetup="",
 
 	# [Optional] Exclude the tests from being executed. (Comma separated values)
 	[string] $ExcludeTests = "",
@@ -93,6 +85,7 @@ Param(
 	# [Optional] Parameters for changing framework behavior.
 	[int]    $TestIterations = 1,
 	[string] $XMLSecretFile = "",
+	[switch] $SkipSecretsUpdate,
 	[switch] $EnableTelemetry,
 	[switch] $UseExistingRG,
 
@@ -104,44 +97,25 @@ Param(
 	[string] $OverrideVMSize = "",
 	[ValidateSet('Default','Keep','Delete',IgnoreCase = $true)]
 
-	# ResourceCleanup options are used to config/control how to proceed the VM and RG resources cleanup between test cases and setupTypes, so
-	# 1) At the end of each test setupType (which means next test case will definitely use another different deploy template)
-	#		"Default" = By default delete resources if VM and RG resources are still exist, unless 'Keep' is specified
-	#		"Keep"    = Always preserve resources for analysis
-	#		"Delete"  = Always delete resources before any of the next setupType deployments happen.
-	# 2) For each test belongs to the same setupType, we respect last test case result of running, Pass or Fail/Aborted
-	#		if lastResult Pass, try to reuse existing deployed VM resources,
-	#			unless '-DeployVMPerEachTest' or next test case needs different profile in deploy template, => Delete resources
-	#		if lastResult Fail/Aborted, try to Preserve resources for analysis,
-	#			unless '-UseExistingRG' or 'ResourceCleanup = Delete', => Delete resources
-	#			unless '-ReuseVmOnFailure', => Reuse vm resources, even lastResult is failed.
-	#		if 'ResourceCleanup = Keep', we respect to 'Keep' whenever trying to delete an successfully deployed VM resources
-	#			but log warning messages when VM and resources need Manual deletion
-	#				or when 'Keep' conflicts with other parameters of Run-LISAv2
+	#ResourceCleanup options:
+	#	"Default" = If test is PASS then delete resources else preserve for analysis.
+	#	"Keep" = Preserve resources for analysis irrespective of test result.
+	#	"Delete" = Delete resources irrespective of test result.
 	[string] $ResourceCleanup,
 	[switch] $DeployVMPerEachTest,
 	[string] $VMGeneration = "",
 
 	[string] $ResultDBTable = "",
 	[string] $ResultDBTestTag = "",
-	[string] $TestPassID = "",
 
-	[switch] $ExitWithZero,
-	[switch] $ForceCustom,
-	[switch] $ReuseVMOnFailure,
-	[switch] $RunInParallel,
-	[int]    $TotalCountInParallel,
-	[string] $TestIdInParallel,
-	[int]    $ParallelTimeoutHours
+	[switch] $ExitWithZero
 )
 
-Set-Location $PSScriptRoot
+
 $CURRENT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-Import-Module "${CURRENT_DIR}\LISAv2-Framework" -Force
+Import-Module "${CURRENT_DIR}\LISAv2-Framework"
 
 $params = @{}
-$global:SasurlPattern = "https?://([-\w]+\.)+[-\w]+(/[-./\w]*)?\?[\w]+=[%&-:;=\w]*"
-$global:TokenPattern = "\?[\w]+=[%&-:;=\w]*"
 $MyInvocation.MyCommand.Parameters.Keys | ForEach-Object {
 	$value = (Get-Variable -Name $_ -Scope "Script" -ErrorAction "SilentlyContinue").Value
 	if ($value) {
@@ -149,23 +123,18 @@ $MyInvocation.MyCommand.Parameters.Keys | ForEach-Object {
 		if ($params.TestNames) {
 			$params.TestNames = $params.TestNames.replace(' ','')
 		}
-		if ($_ -eq "OsVHD" -and ($value -match $global:SasurlPattern)) {
-			Write-Host ($_ + " = " + $($params[$_] -replace ($global:TokenPattern, "***")))
-		} else {
-			Write-Host ($_ + " = " + $params[$_])
+		if ($params.ARMImageName) {
+			$params.ARMImageName = $params.ARMImageName.trim() -replace '\s{2,}', ' '
 		}
+		Write-Host ($_ + " = " + $params[$_])
 	}
 }
 $params["Verbose"] = $PSCmdlet.MyInvocation.BoundParameters["Verbose"]
 
 try {
-	if ($RunInParallel) {
-		Start-LISAv2 @params -ParamsInParallel $params
-	}
-	else {
-		Start-LISAv2 @params
-	}
+	Start-LISAv2 @params
 	exit 0
 } catch {
+	Write-Host $_
 	exit 1
 }

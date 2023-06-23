@@ -10,10 +10,11 @@
     <Category>Functional</Category>
     <Area>GPU</Area>
     <Tags>gpu,pci_hyperv</Tags>
-    <Priority>0</Priority>
+    <Priority>1</Priority>
     <SetupConfig>
       <SetupType>OneVM</SetupType>
-      <OverrideVMSize>Standard_NC6s_v2</OverrideVMSize>
+      <OverrideVMSize>Standard_NC6,=~Standard_NC6s\S*,Standard_NC4as_T4_v3,Standard_ND6s</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
@@ -24,10 +25,11 @@
     <Category>Functional</Category>
     <Area>GPU</Area>
     <Tags>gpu,pci_hyperv</Tags>
-    <Priority>0</Priority>
+    <Priority>1</Priority>
     <SetupConfig>
       <SetupType>OneVM</SetupType>
-      <OverrideVMSize>Standard_NV12s_v3</OverrideVMSize>
+      <OverrideVMSize>Standard_NV6,Standard_NV12s_v3,Standard_NV4as_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
@@ -41,10 +43,11 @@
     <Category>Functional</Category>
     <Area>GPU</Area>
     <Tags>gpu,pci_hyperv</Tags>
-    <Priority>1</Priority>
+    <Priority>2</Priority>
     <SetupConfig>
-      <SetupType>OneVM</SetupType>
-      <OverrideVMSize>Standard_NC24s_v2</OverrideVMSize>
+      <SetupType>TwoVM1Dep</SetupType>
+      <OverrideVMSize>=~Standard_NC24\S*,Standard_NC64as_T4_v3,Standard_ND96asr_v4,Standard_ND96amsr_A100_v4,Standard_NC96ads_A100_v4,=~Standard_ND24\S*,Standard_ND40rs_v2</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
@@ -55,10 +58,11 @@
     <Category>Functional</Category>
     <Area>GPU</Area>
     <Tags>gpu,pci_hyperv</Tags>
-    <Priority>1</Priority>
+    <Priority>2</Priority>
     <SetupConfig>
-      <SetupType>OneVM</SetupType>
-      <OverrideVMSize>Standard_NV48s_v3</OverrideVMSize>
+      <SetupType>TwoVM1Dep</SetupType>
+      <OverrideVMSize>Standard_NV24,Standard_NV48s_v3,Standard_NV32as_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
   <test>
@@ -73,10 +77,30 @@
     <Category>Functional</Category>
     <Area>GPU</Area>
     <Tags>gpu,pci_hyperv</Tags>
-    <Priority>1</Priority>
+    <Priority>3</Priority>
     <SetupConfig>
       <SetupType>OneVM</SetupType>
-      <OverrideVMSize>Standard_NC6s_v2</OverrideVMSize>
+      <OverrideVMSize>=~Standard_NC24r\S*,Standard_NC64as_T4_v3,Standard_ND96asr_v4,Standard_ND96amsr_A100_v4,=~Standard_ND24\S*,Standard_ND40rs_v2,Standard_NV24,Standard_NV48s_v3,Standard_NV32as_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
+    </SetupConfig>
+  </test>
+  <test>
+    <testName>GPU-PCI-RESCIND-TWOVM</testName>
+    <testScript>GPU-DRIVER-INSTALL.ps1</testScript>
+    <files>.\Testscripts\Linux\gpu-driver-install.sh,.\Testscripts\Linux\utils.sh</files>
+    <TestParameters>
+      <param>CUDADriverVersion="CUDA_DRIVER"</param>
+      <param>disable_enable_pci=yes</param>
+    </TestParameters>
+    <Platform>Azure</Platform>
+    <Category>Functional</Category>
+    <Area>GPU</Area>
+    <Tags>gpu,pci_hyperv</Tags>
+    <Priority>3</Priority>
+    <SetupConfig>
+      <SetupType>TwoVM1Dep</SetupType>
+      <OverrideVMSize>=~Standard_NC24r\S*,Standard_NC64as_T4_v3,Standard_ND96asr_v4,Standard_ND96amsr_A100_v4,Standard_NC96ads_A100_v4,=~Standard_ND24\S*,Standard_ND40rs_v2,Standard_NV24,Standard_NV48s_v3,Standard_NV32as_v4</OverrideVMSize>
+      <DiskType>Managed</DiskType>
     </SetupConfig>
   </test>
 </TestCases>

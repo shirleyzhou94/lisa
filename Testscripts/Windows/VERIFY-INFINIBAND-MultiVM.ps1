@@ -7,17 +7,31 @@ param([object] $AllVmData,
 function Resolve-UninitializedIB {
 	# SUSE, sometimes, needs to re-initializes IB port through rebooting
 	if (-not @("UBUNTU").contains($global:detectedDistro)) {
-		$cmd = "lsmod | grep -P '^(?=.*mlx5_ib)(?=.*rdma_cm)(?=.*rdma_ucm)(?=.*ib_ipoib)'"
+		$endureSku = $CurrentTestData.TestParameters.param.Contains('endure_sku=yes')
+		if ($endureSku) {
+			Write-LogInfo "Endure SKU"
+			$cmd = "ip addr show | grep 'eth1' | grep '172'"
+		} else  {
+			Write-LogInfo "SR-IOV SKU"
+			$cmd = "lsmod | grep -P '^(?=.*mlx5_ib)(?=.*rdma_cm)(?=.*rdma_ucm)(?=.*ib_ipoib)'"
+		}
 		foreach ($VmData in $AllVMData) {
 			$ibvOutput = ""
 			$retries = 0
 			while ($retries -lt 4) {
 				$ibvOutput = Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username `
-					$superUser -password $password $cmd -ignoreLinuxExitCode:$true
+					$superUser -password $password $cmd -ignoreLinuxExitCode:$true -maxRetryCount 5
 				if (-not $ibvOutput) {
 					Write-LogWarn "IB is NOT initialized in $($VMData.RoleName)"
-					$TestProvider.RestartAllDeployments($VmData)
-					Start-Sleep -Seconds 20
+					if ($endureSku) {
+						$cmdRestart = "systemctl restart waagent"
+						Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username `
+							$superUser -password $password $cmdRestart -ignoreLinuxExitCode:$true -maxRetryCount 5
+						Start-Sleep -Seconds 30
+					} else {
+						$TestProvider.RestartAllDeployments($VmData)
+						Start-Sleep -Seconds 20
+					}
 					$retries++
 				} else {
 					Write-LogInfo "IB is initialized in $($VMData.RoleName)"
@@ -29,6 +43,11 @@ function Resolve-UninitializedIB {
 			}
 		}
 	}
+}
+
+function GetLogs {
+	Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+		-password $password -download -downloadTo $LogDir -files "/root/TestExecution.log"
 }
 
 function Main {
@@ -104,8 +123,8 @@ function Main {
 			Throw "No any client VM defined. Be sure that, `
 			client machine role names matches with pattern `"*client*`" Aborting Test."
 		}
-		if ($ServerVMData.InstanceSize -imatch "Standard_NC") {
-			Write-LogInfo "Waiting 5 minutes to finish RDMA update for NC series VMs."
+		if ($ServerVMData.InstanceSize -eq "Standard_NC24r") {
+			Write-LogInfo "Waiting 5 minutes to finish RDMA update for NCv1 VMs."
 			Start-Sleep -Seconds 300
 		}
 
@@ -113,6 +132,17 @@ function Main {
 		if (@("CLEARLINUX", "COREOS", "DEBIAN").contains($global:detectedDistro)) {
 			Write-LogInfo "$($global:detectedDistro) is not supported! Test skipped!"
 			return "SKIPPED"
+		}
+
+		# Ubuntu extra step: make sure the VM supports RDMA
+		if (@("UBUNTU").contains($global:detectedDistro)) {
+			$cmd = "lsb_release -r | awk '{print `$2}'"
+			$release = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username `
+				$user -password $password $cmd -ignoreLinuxExitCode:$true -maxRetryCount 5
+			if ($release.Split(".")[0] -lt "16") {
+				Write-LogInfo "Ubuntu $release is not supported! Test skipped"
+				return "SKIPPED"
+			}
 		}
 
 		# IBM Platform MPI shows 32-bit binary complexity in Ubuntu
@@ -141,10 +171,10 @@ function Main {
 		Provision-VMsForLisa -AllVMData $AllVMData -installPackagesOnRoleNames "none"
 		foreach ($VmData in $AllVMData) {
 			Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username $superUser -password `
-				$password "echo $($VmData.RoleName) > /etc/hostname" | Out-Null
+				$password -maxRetryCount 5 "echo $($VmData.RoleName) > /etc/hostname" | Out-Null
 			if ($VmData.RoleName -imatch "Client" -or $VmData.RoleName -imatch "dependency"){
 				Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser -password $password `
-					"echo '$($VmData.InternalIP) $($VmData.RoleName)' >> /etc/hosts" | Out-Null
+					-maxRetryCount 5 "echo '$($VmData.InternalIP) $($VmData.RoleName)' >> /etc/hosts" | Out-Null
 			}
 		}
 		#endregion
@@ -159,7 +189,7 @@ function Main {
 		$ImbP2pTestIterations = 1
 		$ImbIoTestIterations = 1
 		$OmbP2PTestIterations = 1
-		$InfinibandNic = "eth0"
+		$InfinibandNics = @("eth0")
 		$MpiType = ""
 		$BenchmarkType = "IMB"
 		$installOFEDFromExtension = $false
@@ -189,8 +219,9 @@ function Main {
 			if ($TestParam -imatch "omb_p2p_tests_iterations") {
 				$OmbP2PTestIterations = [int]($TestParam.Replace("omb_p2p_tests_iterations=", "").Trim('"'))
 			}
-			if ($TestParam -imatch "ib_nic") {
-				$InfinibandNic = [string]($TestParam.Replace("ib_nic=", "").Trim('"'))
+			if ($TestParam -imatch "ib_nics") {
+				$InfinibandNicsRaw = [string]($TestParam.Replace("ib_nics=", "").Trim('"'))
+				$InfinibandNics = $InfinibandNicsRaw.Split(" ")
 			}
 			if ($TestParam -imatch "num_reboot") {
 				$RemainingRebootIterations = [string]($TestParam.Replace("num_reboot=", "").Trim('"'))
@@ -212,8 +243,11 @@ function Main {
 			if ($TestParam -imatch "quicktest_only") {
 				$QuickTestOnly = [string]($TestParam.Replace("quicktest_only=", "").Trim('"'))
 			}
-			if ($TestParam -imatch "is_nd") {
-				$IsNDTest = [string]($TestParam.Replace("is_nd=", "").Trim('"'))
+			if ($TestParam -imatch "endure_sku") {
+				$IsNDTest = [string]($TestParam.Replace("endure_sku=", "").Trim('"'))
+			}
+			if ($TestParam -imatch "usehpcimage") {
+				$UseHPCImage = [string]($TestParam.Replace("usehpcimage=", "").Trim('"'))
 			}
 		}
 		Add-Content -Value "master=`"$($ServerVMData.InternalIP)`"" -Path $constantsFile
@@ -226,14 +260,19 @@ function Main {
 			$IsNDTest = "no"
 		}
 
-		# Abort, ND test only support A8,A9, H16, H16r and H16mr.
-		if (($IsNDTest -eq "yes") -and ($ServerVMData.InstanceSize -notmatch "Standard_H16(r|mr)*$") -and ($ServerVMData.InstanceSize -notmatch "Standard_A[8|9]")) {
+		# Abort, ND test only support H16r, H16mr and NC24r
+		if (($IsNDTest -eq "yes") -and ($ServerVMData.InstanceSize -notmatch "Standard_H16(r|mr)*$") -and ($ServerVMData.InstanceSize -notmatch "Standard_NC24r")) {
 			throw "$ServerVMData.InstanceSize does not support ND test."
 		}
 
-		if (($IsNDTest -eq "yes") -and ($global:detectedDistro -notmatch "CENTOS")) {
-			throw "Non CentOS-HPC VM, $global:detectedDistro, support ND test."
+		# A100 has 8 NICs, need special handle
+		if($VM_Size -eq "96") {
+			Add-Content -Value "a100_sku=yes" -Path $constantsFile
+			Write-LogInfo "a100_sku=yes added to constants.sh"
 		}
+		
+		Add-Content -Value "usehpcimage=`"$UseHPCImage`"" -Path $constantsFile
+		Write-LogInfo "usehpcimage=$UseHPCImage added to constants.sh"
 
 		Write-LogInfo "constants.sh created successfully..."
 		#endregion
@@ -268,12 +307,13 @@ function Main {
 		while ($sw.elapsed -lt $timeout){
 			$vmCount = $AllVMData.Count
 			foreach ($VMData in $AllVMData) {
-				Wait-Time -seconds 15
-				$state = Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username $user -password $password "cat /root/state.txt" -runAsSudo
+				Wait-Time -seconds 60
+				$state = Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username $user -password $password "cat /root/state.txt" -MaxRetryCount 5 -runAsSudo
 				if ($state -eq "TestCompleted") {
 					$setupRDMACompleted = Run-LinuxCmd -ip $VMData.PublicIP -port $VMData.SSHPort -username $user -password $password `
-						"cat /root/constants.sh | grep setup_completed=0" -runAsSudo
+						-maxRetryCount 5 "cat /root/constants.sh | grep setup_completed=0" -runAsSudo
 					if ($setupRDMACompleted -ne "setup_completed=0") {
+						GetLogs
 						Throw "SetupRDMA.sh run finished on $($VMData.RoleName) but setup was not successful!"
 					}
 					Write-LogInfo "SetupRDMA.sh finished on $($VMData.RoleName)"
@@ -282,13 +322,13 @@ function Main {
 
 				if ($state -eq "TestSkipped") {
 					Write-LogInfo "SetupRDMA finished with SKIPPED state!"
-					$testResult = "SKIPPED"
-					return "SKIPPED"
+					GetLogs
+					return $resultSkipped
 				}
 
 				if (($state -eq "TestFailed") -or ($state -eq "TestAborted")) {
 					Write-LogErr "SetupRDMA.sh didn't finish successfully!"
-					$testResult = $resultAborted
+					GetLogs
 					return $resultAborted
 				}
 			}
@@ -319,22 +359,28 @@ function Main {
 				$ContinueMPITest = $true
 				foreach ($ClientVMData in $ClientMachines) {
 					Write-LogInfo "Getting initial MAC address info from $($ClientVMData.RoleName)"
-					Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-						-password $password "ip addr show $InfinibandNic | grep ether | awk '{print `$2}' > InitialInfiniBandMAC.txt"
+					foreach ($InfinibandNic in $InfinibandNics) {
+						Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+							-password $password -maxRetryCount 5 "ip addr show $InfinibandNic | grep ether | awk '{print `$2}' > InitialInfiniBandMAC-$InfinibandNic.txt"
+					}
 				}
 			} else {
 				$ContinueMPITest = $true
-				foreach ($ClientVMData in $ClientMachines) {
-					Write-LogInfo "Step 1/2: Getting current MAC address info from $($ClientVMData.RoleName)"
-					$CurrentMAC = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-						-password $password "ip addr show $InfinibandNic | grep ether | awk '{print `$2}'"
-					$InitialMAC = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-						-password $password "cat InitialInfiniBandMAC.txt"
-					if ($CurrentMAC -eq $InitialMAC) {
-						Write-LogInfo "Step 2/2: MAC address verified in $($ClientVMData.RoleName)."
-					} else {
-						Write-LogErr "Step 2/2: MAC address swapped / changed in $($ClientVMData.RoleName)."
-						$ContinueMPITest = $false
+				if($VM_Size -ne "96") { # skip checking for A100: ib nic name is random (e.g.ibP257s154020)
+					foreach ($ClientVMData in $ClientMachines) {
+						Write-LogInfo "Step 1/2: Getting current MAC address info from $($ClientVMData.RoleName)"
+						foreach ($InfinibandNic in $InfinibandNics) {
+							$CurrentMAC = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+								-password $password -maxRetryCount 5 "ip addr show $InfinibandNic | grep ether | awk '{print `$2}'"
+							$InitialMAC = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+								-password $password -maxRetryCount 5 "cat InitialInfiniBandMAC-$InfinibandNic.txt"
+							if ($CurrentMAC -eq $InitialMAC) {
+								Write-LogInfo "Step 2/2: MAC address verified in $($ClientVMData.RoleName)."
+							} else {
+								Write-LogErr "Step 2/2: MAC address swapped / changed in $($ClientVMData.RoleName)."
+								$ContinueMPITest = $false
+							}
+						}
 					}
 				}
 			}
@@ -348,70 +394,107 @@ function Main {
 				#endregion
 
 				#region MONITOR TEST
+				$backOffWait = 10
+				$maxBackOffWait = 10 * 60
 				while ((Get-Job -Id $TestJob).State -eq "Running") {
 					$CurrentStatus = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-						-password $password -command "tail -n 1 /root/TestExecution.log"
+						-password $password -maxRetryCount 5 -command "tail -n 1 /root/TestExecution.log"
 					Write-LogInfo "Current Test Status : $CurrentStatus"
 					$temp=(Get-Job -Id $TestJob).State
 					Write-LogInfo "--------------------------------------------------------------------$temp-------------------------"
 					$FinalStatus = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-					-password $password -command "cat /$superUser/state.txt"
+					-password $password -maxRetryCount 5 -command "cat /$superUser/state.txt"
 					Write-LogInfo "$FinalStatus"
-					Wait-Time -seconds 10
+					Wait-Time -seconds $backOffWait
 					if ($FinalStatus -ne "TestRunning") {
 						Write-LogInfo "TestRDMA_MultiVM.sh finished the run!"
 						break
 					}
+					$backOffWait = [math]::min($backOffWait*2, $maxBackOffWait)
 				}
 
 				$temp=(Get-Job -Id $TestJob).State
-				Write-LogInfo "--------------------------------------------------------------------$temp-------------------------"
+					Write-LogInfo "--------------------------------------------------------------------$temp-------------------------"
 				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-					-password $password -download -downloadTo $LogDir -files "/root/$InfinibandNic-status*"
+					-password $password -download -downloadTo $LogDir -files "/root/Setup-TestExecution*.log"
 				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-					-password $password -download -downloadTo $LogDir -files "/root/IMB*"
+					-password $password -download -downloadTo $LogDir -files "/root/TestExecution*.log"
 				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
 					-password $password -download -downloadTo $LogDir -files "/root/kernel-logs-*"
 				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-					-password $password -download -downloadTo $LogDir -files "/root/TestExecution.log"
-				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
 					-password $password -download -downloadTo $LogDir -files "/root/state.txt"
+				# foreach ($InfinibandNic in $InfinibandNics) {
+				# 	Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+				# 		-password $password -download -downloadTo $LogDir -files "/root/$InfiniBandNic-status*"
+				# }
+				Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+					-password $password -download -downloadTo $LogDir -files "/root/*-status*.txt"
+				if ( $IsNDTest -eq "no" ) {
+					Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
+						-password $password -download -downloadTo $LogDir -files "/root/IMB*"
+				}
 				if ($BenchmarkType -eq "OMB") {
 					Copy-RemoteFiles -downloadFrom $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
 						-password $password -download -downloadTo $LogDir -files "/root/OMB*"
 				}
+
 				$ConsoleOutput = ( Get-Content -Path "$LogDir\TestExecution.log" | Out-String )
 				$FinalStatus = Run-LinuxCmd -ip $ServerVMData.PublicIP -port $ServerVMData.SSHPort -username $superUser `
-					-password $password -command "cat /$superUser/state.txt"
+					-password $password -maxRetryCount 5 -command "cat /$superUser/state.txt"
 				if ($Iteration -eq 1) {
 					$TempName = "FirstBoot"
 				} else {
 					$TempName = "Reboot"
 				}
+
 				New-Item -Path "$LogDir\InfiniBand-Verification-$Iteration-$TempName" -Force -ItemType Directory | Out-Null
-				Move-Item -Path "$LogDir\$InfinibandNic-status*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
-				Move-Item -Path "$LogDir\IMB*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				# foreach ($InfinibandNic in $InfinibandNics) {
+				# 	Move-Item -Path "$LogDir\$InfiniBandNic-status*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				# }
+				Move-Item -Path "$LogDir\*-status*.txt" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				if ( $IsNDTest -eq "no" ) {
+					Move-Item -Path "$LogDir\IMB*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				}
 				Move-Item -Path "$LogDir\kernel-logs-*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
-				Move-Item -Path "$LogDir\TestExecution.log" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				Move-Item -Path "$LogDir\TestExecution*.log" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
+				Move-Item -Path "$LogDir\Setup-TestExecution*.log" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
 				Move-Item -Path "$LogDir\state.txt" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
 				if ($BenchmarkType -eq "OMB") {
 					Move-Item -Path "$LogDir\OMB*" -Destination "$LogDir\InfiniBand-Verification-$Iteration-$TempName" | Out-Null
 				}
 
-				#region Check if $InfinibandNic got IP address
+				#region Check if IB driver was correcly set up
 				$logFileName = "$LogDir\InfiniBand-Verification-$Iteration-$TempName\TestExecution.log"
-				$pattern = "INFINIBAND_VERIFICATION_SUCCESS_$InfinibandNic"
+				$pattern = "INFINIBAND_VERIFICATION_FAILED_IBDRIVER"
 				Write-LogInfo "Analyzing $logFileName"
-				$metaData = "InfiniBand-Verification-$Iteration-$TempName : $InfinibandNic IP"
-				$SuccessLogs = Select-String -Path $logFileName -Pattern $pattern
-				if ($SuccessLogs.Count -eq 1) {
-					$currentResult = $resultPass
-				} else {
+				$metaData = "InfiniBand-Verification-$Iteration-$TempName : IB Driver"
+				$SucessLogs = Select-String -Path $logFileName -Pattern $pattern
+				if ($SucessLogs.Count -eq 1) {
 					$currentResult = $resultFail
+				} else {
+					$currentResult = $resultPass
 				}
 				Write-LogInfo "$pattern : $currentResult"
 				$global:CurrentTestResult.TestSummary += New-ResultSummary -testResult $currentResult -metaData $metaData `
 					-checkValues "PASS,FAIL,ABORTED" -testName $CurrentTestData.testName
+				#endregion
+
+				#region Check if $InfinibandNic got IP address
+				$currentResult = $resultPass
+				Write-LogInfo "Analyzing $logFileName"
+				$metaData = "InfiniBand-Verification-$Iteration-$TempName : IB NIC IP"
+				foreach ($InfinibandNic in $InfinibandNics) {
+					$pattern = "INFINIBAND_VERIFICATION_SUCCESS_$InfinibandNic"
+					$SucessLogs = Select-String -Path $logFileName -Pattern $pattern
+					if ($SucessLogs.Count -eq 1) {
+						Write-LogInfo "$pattern : $resultPass"
+					} else {
+						Write-LogInfo "$pattern : $resultFail"
+						$currentResult = $resultFail
+					}
+				}
+				$global:CurrentTestResult.TestSummary += New-ResultSummary -testResult $currentResult -metaData $metaData `
+				-checkValues "PASS,FAIL,ABORTED" -testName $CurrentTestData.testName
 				#endregion
 
 				#region Check ibv_ping_pong tests

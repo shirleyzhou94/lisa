@@ -55,8 +55,8 @@ Class WSLController : TestController
 		}
 	}
 
-	[void] PrepareTestEnvironment($XMLSecretFile) {
-		([TestController]$this).PrepareTestEnvironment($XMLSecretFile)
+	[void] PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate) {
+		([TestController]$this).PrepareTestEnvironment($XMLSecretFile, $SkipSecretsUpdate)
 		$wslConfig = $this.GlobalConfig.Global.WSL
 		$secrets = $this.XmlSecrets.secrets
 		if ($this.XMLSecrets) {
